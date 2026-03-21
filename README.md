@@ -103,6 +103,52 @@ If connection fails:
 - Render’s `CORS_ORIGIN` must match your Vercel URL exactly (including `https://`).
 - Open Render `/health` once to wake the service, then try again.
 
+### “Not found” on Render, or Vercel “took too long to respond”
+
+**These are two different sites:**
+
+
+| URL                                        | What it is                     | What you should see                           |                             |
+| ------------------------------------------ | ------------------------------ | --------------------------------------------- | --------------------------- |
+| `https://selfsabotage.onrender.com/health` |                                | API health check                              | JSON like `{"ok":true,...}` |
+| `https://selfsabotage.onrender.com/`       | API root (not the game)        | JSON describing the API (after latest deploy) |                             |
+| Your **Vercel** `*.vercel.app` link        | The actual game (`index.html`) | The game menu / canvas                        |                             |
+
+
+**Render “not found”**
+
+- Open `**/health`** first (not only `/`). Free tier can be **slow to wake** (~30–60s); wait and retry.
+- If `/` says **Not Found** but `/health` works, your Render app may be an **old deploy** without the root route — **push the latest code** and **Manual Deploy** on Render.
+- Do **not** expect the **full game UI** on Render unless you set `SERVE_STATIC=true` (not needed if you use Vercel for the frontend).
+
+**Vercel “took too long to respond”**
+
+Usually the browser **never reached Vercel** (network/DNS/deploy), not a game bug.
+
+1. In [Vercel Dashboard](https://vercel.com/dashboard) → your project → **Deployments** → open the **latest** deployment. It must say **Ready** (green), not Error or Canceled.
+2. Click **Visit** on that deployment and use **that** URL (copy from the address bar). Don’t use an old bookmark or a wrong typo.
+3. **Root Directory:** Project → **Settings → General** → **Root Directory** must be **empty** (repo root), unless your `index.html` lives in a subfolder — then Root Directory must be that folder.
+4. Confirm on **GitHub** that `index.html` is at that root (same branch Vercel deploys).
+5. Try **another network** (phone data) or turn off **VPN**; some networks block or break `*.vercel.app`.
+6. Try a **private/incognito** window (rules out a broken extension).
+
+**Quick test:** If `https://selfsabotage.onrender.com/health` returns JSON, **Render is fine**; focus troubleshooting on **Vercel** (deployment status + URL + Root Directory).
+
+**Deployment “Ready” but the site never loads (timeout)**
+
+This repo has a **Node** `package.json` (for Render). Vercel sometimes treats that as a **server** project instead of a static site, which can break or hang in the browser.
+
+This project uses **`.vercelignore`** so **`package.json` is not uploaded to Vercel** — only `index.html`, `script.js`, `style.css`, `multiplayer-config.js`, etc. **Render** still clones the **full** Git repo (`.vercelignore` does not apply there).
+
+After pushing, trigger a **new Vercel deployment**, then try:
+
+1. `https://YOUR-PROJECT.vercel.app/deploy-check.txt` — if this loads, routing/DNS to Vercel works.
+2. `https://YOUR-PROJECT.vercel.app/` — the game.
+
+If Vercel shows an error about missing `package.json`, remove only the `package.json` / `package-lock.json` lines from `.vercelignore`, set **Project → Settings → General → Framework Preset** to **Other**, and set **Build / Install** overrides to **empty** or disable automatic install (see Vercel docs for “static site”).
+
+---
+
 ### Render error: `Cannot find module '.../server/index.js'`
 
 Render runs whatever is in **your GitHub repo**. This means the repo is missing the `**server/`** folder (or Render’s **Root Directory** points to a subfolder that doesn’t contain `server/`).
@@ -162,7 +208,7 @@ mp-server.js            # Legacy 2-player queue (`mp:*`) for the current game cl
 
 ### Dual real-time APIs
 
-1. **Room-based API (new)** — `room:`*, `game:*`, `player:*` for custom lobbies, caps, and timed rounds. Use this when you build room UI on the frontend.
+1. **Room-based API (new)** — `room:`*, `game:`*, `player:*` for custom lobbies, caps, and timed rounds. Use this when you build room UI on the frontend.
 2. **Legacy matchmaking** — `mp:`* events from `mp-server.js` for the existing **Find match** flow in `script.js`.
 
 Both run on the **same** Socket.IO server.

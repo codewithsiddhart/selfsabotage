@@ -1,0 +1,2 @@
+If you can open this file at https://YOUR-PROJECT.vercel.app/deploy-check.txt
+then DNS and Vercel are reachable; if index.html still fails, check the browser Network tab.
