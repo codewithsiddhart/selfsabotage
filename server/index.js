@@ -15,6 +15,7 @@ const { isDbEnabled } = require("./db/supabase");
 const { initSockets } = require("./socket");
 const { healthHandler } = require("./controllers/healthController");
 const { leaderboardHandler } = require("./controllers/leaderboardController");
+const { rootHandler } = require("./controllers/rootController");
 const { initMultiplayer } = require("../mp-server");
 
 const app = express();
@@ -45,6 +46,8 @@ if (process.env.SERVE_STATIC === "true") {
   app.use((_req, res) => {
     res.sendFile(path.join(root, "index.html"));
   });
+} else {
+  app.get("/", rootHandler);
 }
 
 const server = http.createServer(app);
