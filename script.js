@@ -3890,7 +3890,11 @@
       typeof window !== "undefined" && typeof window.MULTIPLAYER_SERVER_URL === "string"
         ? String(window.MULTIPLAYER_SERVER_URL).trim().replace(/\/$/, "")
         : "";
-    const socketOpts = { query: { name }, transports: ["websocket", "polling"] };
+    const socketOpts = {
+      query: { name },
+      transports: ["websocket", "polling"],
+      path: "/socket.io/",
+    };
     const socket = mpBase ? io(mpBase, socketOpts) : io(socketOpts);
     mpSession.socket = socket;
     mpSession.active = true;
@@ -3902,10 +3906,11 @@
       socket.emit("mp:queue");
     });
 
-    socket.on("connect_error", () => {
+    socket.on("connect_error", (err) => {
+      console.error("Multiplayer connect_error:", err && err.message, err);
       showToast(
-        "Could not connect to multiplayer server. Check multiplayer-config.js (Render URL) and Render CORS for this site.",
-        4200
+        "Could not connect to multiplayer server. On Render set CORS_ORIGIN to your Vercel URL plus ,*.vercel.app for previews. Check multiplayer-config.js Render URL.",
+        5200
       );
       resetMultiplayerClientUi();
     });

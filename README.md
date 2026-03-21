@@ -67,7 +67,7 @@ Skip this if you only want multiplayer **without** saved leaderboards in the clo
 | Name                        | What to put                                                                                                                                                                                                            |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NODE_ENV`                  | `production`                                                                                                                                                                                                           |
-| `CORS_ORIGIN`               | Your **Vercel** URL from Step C (exact copy from the browser), e.g. `https://something.vercel.app`. For more than one URL, use commas **between** URLs with **no spaces**: `https://a.vercel.app,https://b.vercel.app` |
+| `CORS_ORIGIN`               | Your **Vercel** URL + all previews: e.g. `https://something.vercel.app,*.vercel.app` (comma, **no spaces**). The `*.vercel.app` entry allows Vercel preview URLs like `something-git-main-xxx.vercel.app`. |
 | `SUPABASE_URL`              | From Supabase API settings (if you did Step B)                                                                                                                                                                         |
 | `SUPABASE_SERVICE_ROLE_KEY` | From Supabase **service_role** (if you did Step B)                                                                                                                                                                     |
 
@@ -100,7 +100,7 @@ For **local** play with `npm start`, keep it as `""` so the browser uses the sam
 If connection fails:
 
 - `multiplayer-config.js` must match your Render URL exactly (`https`, no `/` at the end).
-- Render’s `CORS_ORIGIN` must match your Vercel URL exactly (including `https://`).
+- Render’s `CORS_ORIGIN` must include your Vercel URL and usually `*.vercel.app` for preview deployments (see env table above).
 - Open Render `/health` once to wake the service, then try again.
 
 ### “Not found” on Render, or Vercel “took too long to respond”
@@ -224,7 +224,7 @@ Copy `.env.example` to `.env` for local development. On **Render**, set the same
 | ----------------------------- | -------------- | ---------------------------------------------------------------------------- |
 | `PORT`                        | On Render      | Render injects this automatically.                                           |
 | `NODE_ENV`                    | Optional       | `production` on Render.                                                      |
-| `CORS_ORIGIN`                 | **Yes (prod)** | Comma-separated allowed origins, e.g. `https://your-app.vercel.app`.         |
+| `CORS_ORIGIN`                 | **Yes (prod)** | e.g. `https://your-app.vercel.app,*.vercel.app` (no spaces; second part allows all `*.vercel.app` previews). |
 | `SUPABASE_URL`                | Optional       | Supabase project URL.                                                        |
 | `SUPABASE_SERVICE_ROLE_KEY`   | Optional       | **Server only.** Never expose in the browser or Vercel env for client code.  |
 | `GAME_MIN_PLAYERS`            | Optional       | Default `2`.                                                                 |
@@ -280,7 +280,7 @@ Open the game through a URL that matches your CORS settings. For multiplayer aga
 Full walkthrough: **[How to deploy (simple order)](#how-to-deploy-simple-order)** above.
 
 - **Frontend → Render:** edit `multiplayer-config.js` → `window.MULTIPLAYER_SERVER_URL = "https://YOUR-SERVICE.onrender.com"`.
-- **Render → allows your site:** `CORS_ORIGIN` must list your exact Vercel URL(s).
+- **Render → allows your site:** `CORS_ORIGIN` must list your Vercel URL(s); add `*.vercel.app` if you use preview deployments.
 - **Render health check:** optional path `/health`.
 
 For a **custom room/leaderboard client** (not the built-in Find match UI), connect Socket.IO to the same Render URL and pass `displayName` / `clientPublicId` in the `query` object as in the backend docs.

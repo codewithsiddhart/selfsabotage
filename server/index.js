@@ -17,20 +17,24 @@ const { healthHandler } = require("./controllers/healthController");
 const { leaderboardHandler } = require("./controllers/leaderboardController");
 const { rootHandler } = require("./controllers/rootController");
 const { initMultiplayer } = require("../mp-server");
+const { isOriginAllowed } = require("./utils/corsAllow");
 
 const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "32kb" }));
 
+function corsOriginCallback(origin, cb) {
+  const list = config.corsOrigins;
+  const dev = config.nodeEnv !== "production";
+  if (isOriginAllowed(origin, list, { allowDevBypass: dev })) {
+    return cb(null, true);
+  }
+  console.warn(`[cors] blocked origin: ${origin || "(none)"} — set CORS_ORIGIN on Render (add *.vercel.app for all Vercel URLs)`);
+  cb(new Error(`CORS blocked: ${origin || "unknown"}`));
+}
+
 const dynamicCors = cors({
-  origin(origin, cb) {
-    const list = config.corsOrigins;
-    if (!origin) return cb(null, true);
-    if (list.includes("*")) return cb(null, true);
-    if (list.includes(origin)) return cb(null, true);
-    if (config.nodeEnv !== "production") return cb(null, true);
-    cb(new Error(`CORS blocked: ${origin}`));
-  },
+  origin: corsOriginCallback,
   credentials: true,
 });
 
@@ -55,12 +59,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin(origin, cb) {
-      const list = config.corsOrigins;
-      if (!origin) return cb(null, true);
-      if (list.includes("*")) return cb(null, true);
-      if (list.includes(origin)) return cb(null, true);
-      if (config.nodeEnv !== "production") return cb(null, true);
-      cb(new Error("Not allowed by CORS"));
+      corsOriginCallback(origin, cb);
     },
     methods: ["GET", "POST"],
     credentials: true,

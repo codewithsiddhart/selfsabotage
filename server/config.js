@@ -21,7 +21,10 @@ const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: intEnv("PORT", 3000),
 
-  /** Comma-separated origins, e.g. https://my-app.vercel.app,https://*.vercel.app */
+  /**
+   * Comma-separated origins. Add *.vercel.app to allow all Vercel preview + production URLs.
+   * Example: https://my-game.vercel.app,*.vercel.app
+   */
   corsOrigins: parseList(process.env.CORS_ORIGIN, [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
