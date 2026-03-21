@@ -1,0 +1,439 @@
+<!doctype html>
+<!--
+  © 2026 NeuroGlitch. All Rights Reserved.
+  NeuroGlitch is an independent game development and software initiative.
+  Self-Sabotage Builder: intellectual property of NeuroGlitch.
+  Founders: Siddharth (Discord: perfect_humann), Harshit (Discord: mehuman123).
+  All rights reserved. Unauthorized copying, redistribution, or reproduction is strictly prohibited.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Self-Sabotage Builder | NeuroGlitch</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Device mode: show on first visit -->
+    <div id="deviceModal" class="modal deviceModal hidden" role="dialog" aria-label="Choose your device">
+      <div class="modalHeader">
+        <div class="modalTitle">How are you playing?</div>
+      </div>
+      <div class="modalBody">
+        <div class="deviceOptions">
+          <button id="deviceDesktopBtn" class="btn primary deviceBtn" type="button">
+            <span class="deviceIcon">🖥️</span>
+            <span>Desktop</span>
+            <span class="smallNote">Keyboard (WASD / Arrows)</span>
+          </button>
+          <button id="deviceMobileBtn" class="btn deviceBtn" type="button">
+            <span class="deviceIcon">📱</span>
+            <span>Mobile</span>
+            <span class="smallNote">Touch controls</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Touch controls (visible only in mobile mode when playing) -->
+    <div id="touchControls" class="touchControls hidden" aria-hidden="true">
+      <button id="touchLeft" class="touchBtn touchLeft" type="button" aria-label="Move left">←</button>
+      <button id="touchRight" class="touchBtn touchRight" type="button" aria-label="Move right">→</button>
+      <button id="touchJump" class="touchBtn touchJump" type="button" aria-label="Jump">↑</button>
+    </div>
+
+    <!-- Exit to menu (top-left, play + build) -->
+    <button id="exitToMenuBtn" class="exitToMenuBtn hidden" type="button" aria-label="Exit to menu">✕ Menu</button>
+
+    <!-- Rotate device (mobile play only) -->
+    <div id="rotateOverlay" class="rotateOverlay hidden" aria-hidden="true">
+      <div class="rotateMessage">Rotate your device for best experience</div>
+    </div>
+
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="title">Self-Sabotage Builder</div>
+          <div class="subtitle">Build your own level, then beat the booby-traps you didn’t mean to make.</div>
+        </div>
+
+        <div class="topActions">
+          <div class="profileChip" id="profileChip" role="button" tabindex="0" aria-label="Open player profile">
+            <div class="dot"></div>
+            <div class="stack">
+              <div class="smallLabel">Player</div>
+              <div id="activePlayerName" class="chipName">—</div>
+            </div>
+          </div>
+
+          <div class="mode">
+            <button id="buildModeBtn" class="btn primary" type="button">Build</button>
+            <button id="playModeBtn" class="btn" type="button">Play</button>
+          </div>
+
+          <button id="restartBtn" class="btn" type="button" disabled>Restart</button>
+          <button id="openLevelsBtn" class="btn" type="button">Levels</button>
+          <button id="openLeaderboardBtn" class="btn" type="button">Leaderboard</button>
+          <button id="openSettingsBtn" class="btn" type="button">Settings</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <aside class="panel">
+          <div class="panelTitleRow">
+            <div class="panelTitle">Build Tools</div>
+            <div id="budgetPill" class="pill subtle" title="Placement limits">0/0</div>
+          </div>
+
+          <div id="palette" class="palette" aria-label="Tile palette"></div>
+
+          <div class="miniStats">
+            <div class="stat">
+              <div class="k">Difficulty</div>
+              <div id="difficultyValue" class="v">0.0</div>
+            </div>
+            <div class="stat">
+              <div class="k">Validation</div>
+              <div id="validationValue" class="v warn">Needs Start + Goal</div>
+            </div>
+          </div>
+
+          <div class="panelActions">
+            <button id="saveLevelBtn" class="btn primary" type="button">Save Level</button>
+            <button id="mpSubmitLevelBtn" class="btn mpSubmitBtn hidden" type="button">Submit level</button>
+            <button id="clearBtn" class="btn danger" type="button">Clear Grid</button>
+          </div>
+          <p id="mpBuildHint" class="mpBuildHint hidden">
+            Online match: place <b>Start</b> and <b>Goal</b>, then tap <b>Submit level</b> here. Do not use Play — it stays off until your turn to run.
+          </p>
+
+          <div class="help">
+            <div class="helpTitle">Controls</div>
+            <ul>
+              <li><b>Move</b>: WASD or Arrow keys</li>
+              <li><b>Jump</b>: W / Up / Space</li>
+              <li><b>Build</b>: left click place, right click erase</li>
+            </ul>
+            <div class="helpTitle">Core rule</div>
+            <div class="helpText">
+              Build mode hides sabotage. When you hit <b>Play</b>, every placed tile “activates” a secret behavior for
+              this run.
+            </div>
+          </div>
+        </aside>
+
+        <section class="stageWrap">
+          <div class="hud">
+            <div id="statusPill" class="pill">Loading…</div>
+            <div id="timerPill" class="pill timerPill hidden">2:00</div>
+            <div id="mpHud" class="mpHud hidden" aria-live="polite">
+              <div class="mpHudTop">
+                <span id="mpHudRound" class="mpHudBit">Round —</span>
+                <span id="mpHudRole" class="mpHudBit">—</span>
+              </div>
+              <div id="mpHudScore" class="mpHudScore">You 0 · Opp 0</div>
+            </div>
+            <div class="pill subtle">
+              <span id="runHint">Build carefully.</span>
+            </div>
+          </div>
+
+          <canvas id="game" width="960" height="576" aria-label="Game canvas"></canvas>
+          <div id="endOverlay" class="endOverlay hidden" aria-hidden="true">
+            <div class="endOverlayContent">
+              <div id="endOverlayMessage" class="endOverlayMessage"></div>
+              <div id="endOverlayStats" class="endOverlayStats"></div>
+              <div class="endOverlayActions">
+                <button id="endRetryBtn" class="btn primary" type="button">Retry</button>
+                <button id="endNextLevelBtn" class="btn" type="button">Next level</button>
+                <button id="endBuildBtn" class="btn" type="button">Build mode</button>
+              </div>
+            </div>
+          </div>
+          <div id="toast" class="toast" role="status" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="fineprint">
+          Offline-friendly. Progress is saved locally per player. Sabotage is seeded per run: unpredictable, but not
+          unfairly random mid-run.
+        </div>
+        <div class="copyright">© 2026 NeuroGlitch. All Rights Reserved. Self-Sabotage Builder by NeuroGlitch
+        </div>
+       
+        <div class="copyright"><h2>You can contact the founders through email or discord : </h2>
+          <b>
+             <h2>
+          1:Siddharth[zestyclosee1@proton.me,perfect_humann]<br>
+          2:Harshit[discord:mehuman123]
+          </h2>
+          </b>
+          
+        </div>
+      </footer>
+    </div>
+
+    <!-- Start / Profile Modal -->
+    <div id="modalBackdrop" class="backdrop hidden" aria-hidden="true"></div>
+
+    <div id="startModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Start screen">
+      <div class="modalHeader">
+        <div class="modalTitle">Welcome</div>
+        <button id="closeStartModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Choose a player</div>
+          <div class="row">
+            <input id="playerSearchInput" class="input" placeholder="Search player name…" autocomplete="off" />
+            <button id="playerSearchBtn" class="btn" type="button">Search</button>
+          </div>
+          <div id="playerList" class="list" aria-label="Player list"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Create new player</div>
+          <div class="row">
+            <input id="newPlayerInput" class="input" placeholder="Enter a username…" maxlength="18" autocomplete="off" />
+            <button id="createPlayerBtn" class="btn primary" type="button">Create</button>
+          </div>
+          <div class="smallNote">Local only. Stored in your browser.</div>
+        </div>
+
+        <div class="card mpStartCard">
+          <div class="cardTitle">Online — 2 players</div>
+          <p class="helpText mpStartCardBlurb">
+            Same link for both players (<b>npm start</b> or ngrok). When you build, use <b>Submit level</b> in the left panel.
+          </p>
+          <button id="multiplayerBtn" class="btn primary mpStartBtn" type="button">Find match</button>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Quick instructions</div>
+          <div class="helpText">
+            Build a path from <b>Start</b> to <b>Goal</b>. In play mode, tiles may crumble, flicker, misfire, or even
+            curse your controls.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Powerups (preconfigured levels only)</div>
+          <div id="powerupSlots" class="powerupSlots">
+            <div class="powerupSlot" data-powerup="doubleJump" title="Double Jump: extra mid-air jump once per run on built-in levels.">
+              <span class="powerupIcon">⬆️⬆️</span>
+              <span class="powerupName">Double Jump</span>
+              <span id="powerupCountDoubleJump" class="powerupCount">0</span>
+              <button type="button" class="btn btnSmall usePowerupBtn" data-powerup="doubleJump">Use</button>
+            </div>
+            <div class="powerupSlot" data-powerup="speedBoost" title="Speed Boost: faster move speed for several seconds at level start.">
+              <span class="powerupIcon">⚡</span>
+              <span class="powerupName">Speed Boost</span>
+              <span id="powerupCountSpeedBoost" class="powerupCount">0</span>
+              <button type="button" class="btn btnSmall usePowerupBtn" data-powerup="speedBoost">Use</button>
+            </div>
+            <div class="powerupSlot" data-powerup="protection" title="Protection: blocks one lethal hit (spikes, lava, hex, or hammer).">
+              <span class="powerupIcon">🛡️</span>
+              <span class="powerupName">Protection</span>
+              <span id="powerupCountProtection" class="powerupCount">0</span>
+              <button type="button" class="btn btnSmall usePowerupBtn" data-powerup="protection">Use</button>
+            </div>
+          </div>
+          <div class="smallNote">Use before starting a built-in level. Earned randomly after winning Medium/Hard.</div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Level selection</div>
+          <div class="levelTabs">
+            <button type="button" class="levelTab active" data-tier="easy">Easy</button>
+            <button type="button" class="levelTab" data-tier="medium">Medium</button>
+            <button type="button" class="levelTab" data-tier="hard">Hard</button>
+          </div>
+          <div id="levelListByTier" class="levelListByTier"></div>
+          <div class="row" style="margin-top:10px">
+            <button id="quickRandomBtn" class="btn" type="button">Random level</button>
+          </div>
+          <div class="smallNote">Built-in levels have a timer. Powerups only work in built-in levels.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Levels Modal -->
+    <div id="levelsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Level manager">
+      <div class="modalHeader">
+        <div class="modalTitle">Levels</div>
+        <button id="closeLevelsModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="row">
+          <input id="saveLevelNameInput" class="input" placeholder="Level name…" maxlength="26" autocomplete="off" />
+          <button id="confirmSaveLevelBtn" class="btn primary" type="button">Save</button>
+        </div>
+        <div class="smallNote">Tip: saving snapshots the current grid.</div>
+        <div id="levelsList" class="list" aria-label="Saved levels list"></div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Modal -->
+    <div id="leaderboardModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Local leaderboard">
+      <div class="modalHeader">
+        <div class="modalTitle">Leaderboard (Local)</div>
+        <button id="closeLeaderboardModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="row">
+          <input id="leaderboardSearchInput" class="input" placeholder="Search player…" autocomplete="off" />
+          <button id="leaderboardSearchBtn" class="btn" type="button">Search</button>
+        </div>
+        <div id="leaderboardList" class="list" aria-label="Leaderboard list"></div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="modalHeader">
+        <div class="modalTitle">Settings</div>
+        <button id="closeSettingsModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Appearance</div>
+          <div class="row" style="margin-bottom:8px">
+            <label class="helpText" for="themeSelect" style="min-width:100px; font-weight:900">Theme</label>
+            <select id="themeSelect" class="input" aria-label="Visual theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="forest">Green Forest</option>
+              <option value="indian">Rajasthani Vibes</option>
+              <option value="cute">Cute Garden</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="helpText" for="backgroundSelect" style="min-width:100px; font-weight:900">Background</label>
+            <select id="backgroundSelect" class="input" aria-label="Background">
+              <option value="nebula">Nebula (layered)</option>
+              <option value="grid">Retro Grid</option>
+              <option value="dusk">Dusk Sky</option>
+              <option value="forest">Forest Mist</option>
+              <option value="indian">Indian Night</option>
+              <option value="cuteFlowers">Pink Garden (soft)</option>
+              <option value="city">City Night</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Sound</div>
+          <label class="toggleRow">
+            <span>Enable audio (SFX + ambient)</span>
+            <input id="soundToggle" type="checkbox" />
+          </label>
+          <div class="row" style="margin-top:10px">
+            <label class="helpText" for="volumeSlider" style="min-width:100px; font-weight:900">Volume</label>
+            <input id="volumeSlider" type="range" min="0" max="100" value="70" />
+            <span id="volumeValue" class="pill subtle">70%</span>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <label class="helpText" for="ambientNoiseSelect" style="min-width:100px; font-weight:900">Ambient</label>
+            <select id="ambientNoiseSelect" class="input" aria-label="Ambient noise">
+              <option value="off">Off</option>
+              <option value="white">White noise</option>
+              <option value="pink">Pink noise</option>
+              <option value="brown">Brown noise</option>
+            </select>
+          </div>
+          <div class="smallNote">
+            Procedural SFX (place, jump, win, lose). Optional looping ambient noise — no music. Click the game once to unlock audio in the browser.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Debug</div>
+          <label class="toggleRow">
+            <span>Show hitboxes &amp; path debug</span>
+            <input id="debugOverlayToggle" type="checkbox" />
+          </label>
+          <div class="smallNote">Play mode: player &amp; tile hitboxes, jump-range box. Build mode: last reachability BFS cells (teal).</div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Sabotage</div>
+          <div class="row">
+            <label class="helpText" for="sabotageSlider" style="min-width:120px; font-weight:900">Intensity</label>
+            <input id="sabotageSlider" type="range" min="1" max="10" step="1" />
+            <div id="sabotageValue" class="pill subtle" style="padding:6px 10px">5</div>
+          </div>
+          <div class="smallNote">1 = gentle betrayals, 10 = chaos (still seeded per run).</div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Keybinds</div>
+          <div id="keybindList" class="list" aria-label="Keybind list"></div>
+          <div class="smallNote">
+            Tip: click <b>Change</b>, then press a key. Restart is especially useful mid-run.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Rules & Tips</div>
+          <div class="helpText">
+            - Your <b>difficulty score</b> is based on placed tiles (platform 1, spike 2, jump pad 1.5, hex 2.5).<br />
+            - Beating higher difficulty levels grants a bonus multiplier to points earned.<br />
+            - The leaderboard is <b>local</b> to this browser only (per your players).<br />
+            - Sabotage is consistent per run: it won’t “reroll” mid-run, but it can trigger on timers.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mpMatchmaking" class="mpOverlay hidden" role="dialog" aria-modal="true" aria-label="Matchmaking">
+      <div class="mpOverlayCard">
+        <div class="mpOverlayHead">
+          <h2 class="mpOverlayHeading">Finding match</h2>
+          <button type="button" class="mpOverlayX" id="mpQueueCloseBtn" aria-label="Leave queue">✕</button>
+        </div>
+        <p class="mpOverlayLead">Waiting for another player on this server.</p>
+      </div>
+    </div>
+
+    <div id="mpWaitBuild" class="mpOverlay hidden" aria-live="polite">
+      <div class="mpOverlayCard mpOverlayCard--ghost">
+        <h2 class="mpOverlayHeading">They’re building</h2>
+        <p class="mpOverlayLead">You’ll run their level next.</p>
+      </div>
+    </div>
+
+    <div id="mpSpectate" class="mpOverlay hidden" aria-live="polite">
+      <div class="mpOverlayCard mpOverlayCard--ghost">
+        <h2 class="mpOverlayHeading" id="mpSpectateTitle">They’re playing</h2>
+        <p class="mpOverlayLead" id="mpSpectateBody">Sit tight — round ends when they finish.</p>
+      </div>
+    </div>
+
+    <div id="mpRound3Overlay" class="mpOverlay hidden" aria-live="assertive">
+      <div class="mpOverlayCard mpOverlayCard--countdown">
+        <p class="mpOverlayKicker">Final round</p>
+        <div id="mpRound3Countdown" class="mpBigCount" aria-hidden="true">3</div>
+        <p class="mpOverlayLead mpOverlayLead--center">Same level · same timer · fastest win gets a bonus.</p>
+      </div>
+    </div>
+
+    <div id="mpMatchEnd" class="mpOverlay hidden" role="dialog" aria-modal="true" aria-label="Match result">
+      <div class="mpOverlayCard">
+        <div class="mpOverlayHead">
+          <h2 class="mpOverlayHeading" id="mpMatchEndTitle">Match over</h2>
+          <button type="button" class="mpOverlayX" id="mpMatchEndCloseBtn" aria-label="Back to menu">✕</button>
+        </div>
+        <div id="mpMatchEndScores" class="mpMatchEndScores"></div>
+        <div class="mpRematchRow">
+          <button id="mpRematchBtn" class="btn primary" type="button">Rematch</button>
+          <button id="mpDeclineRematchBtn" class="btn" type="button">Menu</button>
+        </div>
+        <p class="mpOverlayFoot">Both choose Rematch to play again.</p>
+      </div>
+    </div>
+
+    <script src="multiplayer-config.js"></script>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
