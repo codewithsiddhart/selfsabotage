@@ -34,11 +34,11 @@ Do these in order so you always have the URLs you need for the next step.
 Skip this if you only want multiplayer **without** saved leaderboards in the cloud.
 
 1. Go to [supabase.com](https://supabase.com) → sign up → **New project** (wait until it finishes creating).
-2. Open **SQL Editor** → **New query** → paste everything from `server/db/schema.sql` in this repo → **Run**.  
-   (“Success. No rows returned” is expected; keys and URL come from the next step, not from this query.)
+2. Open **SQL Editor** → **New query** → paste everything from `server/db/schema.sql` in this repo → **Run**.
+  (“Success. No rows returned” is expected; keys and URL come from the next step, not from this query.)
 3. Open **Project Settings** (gear) → **API**:
-   - Copy **Project URL** → you will put this in Render as `SUPABASE_URL`.
-   - Copy the **service_role** key → put it in Render as `SUPABASE_SERVICE_ROLE_KEY` only.
+  - Copy **Project URL** → you will put this in Render as `SUPABASE_URL`.
+  - Copy the **service_role** key → put it in Render as `SUPABASE_SERVICE_ROLE_KEY` only.
 
 **Important:** Never put `service_role` in Vercel, in `index.html`, or in `multiplayer-config.js`. It is **backend-only**.
 
@@ -58,20 +58,22 @@ Skip this if you only want multiplayer **without** saved leaderboards in the clo
 1. Go to [render.com](https://render.com) → sign up (GitHub is easiest).
 2. **New +** → **Web Service** → connect the **same** GitHub repo.
 3. Settings:
-   - **Build command:** `npm install`
-   - **Start command:** `npm start`
-   - **Instance type:** Free
+  - **Build command:** `npm install`
+  - **Start command:** `npm start`
+  - **Instance type:** Free
 4. **Environment** → add variables:
 
-| Name | What to put |
-|------|----------------|
-| `NODE_ENV` | `production` |
-| `CORS_ORIGIN` | Your **Vercel** URL from Step C (exact copy from the browser), e.g. `https://something.vercel.app`. For more than one URL, use commas **between** URLs with **no spaces**: `https://a.vercel.app,https://b.vercel.app` |
-| `SUPABASE_URL` | From Supabase API settings (if you did Step B) |
-| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase **service_role** (if you did Step B) |
 
-5. **Create Web Service** and wait until status is **Live**.
-6. Copy the service URL at the top, e.g. `https://your-api.onrender.com`.
+| Name                        | What to put                                                                                                                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                  | `production`                                                                                                                                                                                                           |
+| `CORS_ORIGIN`               | Your **Vercel** URL from Step C (exact copy from the browser), e.g. `https://something.vercel.app`. For more than one URL, use commas **between** URLs with **no spaces**: `https://a.vercel.app,https://b.vercel.app` |
+| `SUPABASE_URL`              | From Supabase API settings (if you did Step B)                                                                                                                                                                         |
+| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase **service_role** (if you did Step B)                                                                                                                                                                     |
+
+
+1. **Create Web Service** and wait until status is **Live**.
+2. Copy the service URL at the top, e.g. `https://your-api.onrender.com`.
 
 **Check:** open `https://your-api.onrender.com/health` — you should see JSON with `"ok":true`.
 
@@ -83,9 +85,7 @@ Skip this if you only want multiplayer **without** saved leaderboards in the clo
 
 1. Open `multiplayer-config.js` in this project.
 2. Set your Render URL (no trailing slash):
-
-   `window.MULTIPLAYER_SERVER_URL = "https://your-api.onrender.com";`
-
+  `window.MULTIPLAYER_SERVER_URL = "https://your-api.onrender.com";`
 3. Commit and push to GitHub. Vercel will redeploy automatically.
 
 For **local** play with `npm start`, keep it as `""` so the browser uses the same address as the page.
@@ -105,15 +105,15 @@ If connection fails:
 
 ### Render error: `Cannot find module '.../server/index.js'`
 
-Render runs whatever is in **your GitHub repo**. This means the repo is missing the **`server/`** folder (or Render’s **Root Directory** points to a subfolder that doesn’t contain `server/`).
+Render runs whatever is in **your GitHub repo**. This means the repo is missing the `**server/`** folder (or Render’s **Root Directory** points to a subfolder that doesn’t contain `server/`).
 
 **Fix:**
 
 1. On your PC, open the project that has `server/index.js` (full tree under `server/`).
 2. Commit and **push** to the same repo Render uses, including at least:
-   - `server/` (entire directory)
-   - `mp-server.js` (root — required by `server/index.js`)
-   - `package.json` (with `"start": "node server/index.js"`)
+  - `server/` (entire directory)
+  - `mp-server.js` (root — required by `server/index.js`)
+  - `package.json` (with `"start": "node server/index.js"`)
 3. In GitHub, confirm you see `server/index.js` on the `main` branch.
 4. Trigger **Manual Deploy** on Render (or push again).
 
@@ -123,11 +123,13 @@ If you use a **monorepo**, set Render’s **Root Directory** to the folder that 
 
 ## Backend architecture
 
-| Layer | Role |
-|--------|------|
-| **In-memory** | Live rooms, lobby, rounds, positions, actions — **not** stored in Postgres during play. |
-| **Supabase** | After a match ends: `users`, `rooms` (history row), `scores` (per-player totals + rank). Leaderboard is aggregated from `scores`. |
+
+| Layer                | Role                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **In-memory**        | Live rooms, lobby, rounds, positions, actions — **not** stored in Postgres during play.                                                  |
+| **Supabase**         | After a match ends: `users`, `rooms` (history row), `scores` (per-player totals + rank). Leaderboard is aggregated from `scores`.        |
 | **Server authority** | Round timers, phase transitions, and scoring for the generic room game run on the server. Clients cannot end rounds or set final scores. |
+
 
 ### Directory layout
 
@@ -160,8 +162,8 @@ mp-server.js            # Legacy 2-player queue (`mp:*`) for the current game cl
 
 ### Dual real-time APIs
 
-1. **Room-based API (new)** — `room:*`, `game:*`, `player:*` for custom lobbies, caps, and timed rounds. Use this when you build room UI on the frontend.
-2. **Legacy matchmaking** — `mp:*` events from `mp-server.js` for the existing **Find match** flow in `script.js`.
+1. **Room-based API (new)** — `room:`*, `game:*`, `player:*` for custom lobbies, caps, and timed rounds. Use this when you build room UI on the frontend.
+2. **Legacy matchmaking** — `mp:`* events from `mp-server.js` for the existing **Find match** flow in `script.js`.
 
 Both run on the **same** Socket.IO server.
 
@@ -171,22 +173,24 @@ Both run on the **same** Socket.IO server.
 
 Copy `.env.example` to `.env` for local development. On **Render**, set the same keys in the service **Environment** tab.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `PORT` | On Render | Render injects this automatically. |
-| `NODE_ENV` | Optional | `production` on Render. |
-| `CORS_ORIGIN` | **Yes (prod)** | Comma-separated allowed origins, e.g. `https://your-app.vercel.app`. |
-| `SUPABASE_URL` | Optional | Supabase project URL. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional | **Server only.** Never expose in the browser or Vercel env for client code. |
-| `GAME_MIN_PLAYERS` | Optional | Default `2`. |
-| `GAME_MAX_PLAYERS_PER_ROOM` | Optional | Default `8` (max 32). |
-| `ROUNDS_PER_MATCH` | Optional | Default `3`. |
-| `ROUND_DURATION_MS` | Optional | Default `60000`. |
-| `LOBBY_COUNTDOWN_MS` | Optional | Default `3000` after host starts. |
-| `POSITION_UPDATE_MAX_PER_SEC` | Optional | Default `20` per socket. |
-| `ACTION_UPDATE_MAX_PER_SEC` | Optional | Default `10` per socket. |
-| `BASE_ROUND_SURVIVAL_POINTS` | Optional | Points added each round (server-side). |
-| `SERVE_STATIC` | Optional | `true` to serve this repo’s `index.html` from the same process (local only). |
+
+| Variable                      | Required       | Description                                                                  |
+| ----------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| `PORT`                        | On Render      | Render injects this automatically.                                           |
+| `NODE_ENV`                    | Optional       | `production` on Render.                                                      |
+| `CORS_ORIGIN`                 | **Yes (prod)** | Comma-separated allowed origins, e.g. `https://your-app.vercel.app`.         |
+| `SUPABASE_URL`                | Optional       | Supabase project URL.                                                        |
+| `SUPABASE_SERVICE_ROLE_KEY`   | Optional       | **Server only.** Never expose in the browser or Vercel env for client code.  |
+| `GAME_MIN_PLAYERS`            | Optional       | Default `2`.                                                                 |
+| `GAME_MAX_PLAYERS_PER_ROOM`   | Optional       | Default `8` (max 32).                                                        |
+| `ROUNDS_PER_MATCH`            | Optional       | Default `3`.                                                                 |
+| `ROUND_DURATION_MS`           | Optional       | Default `60000`.                                                             |
+| `LOBBY_COUNTDOWN_MS`          | Optional       | Default `3000` after host starts.                                            |
+| `POSITION_UPDATE_MAX_PER_SEC` | Optional       | Default `20` per socket.                                                     |
+| `ACTION_UPDATE_MAX_PER_SEC`   | Optional       | Default `10` per socket.                                                     |
+| `BASE_ROUND_SURVIVAL_POINTS`  | Optional       | Points added each round (server-side).                                       |
+| `SERVE_STATIC`                | Optional       | `true` to serve this repo’s `index.html` from the same process (local only). |
+
 
 ---
 
@@ -194,10 +198,10 @@ Copy `.env.example` to `.env` for local development. On **Render**, set the same
 
 1. Create a project at [supabase.com](https://supabase.com) (free tier).
 2. Open **SQL Editor** and run the contents of `server/db/schema.sql` once.
-   - **“Success. No rows returned”** is normal: this file creates tables, it does not return rows like a `SELECT`. It does **not** show your Project URL or keys here.
+  - **“Success. No rows returned”** is normal: this file creates tables, it does not return rows like a `SELECT`. It does **not** show your Project URL or keys here.
 3. In **Project Settings → API**, copy:
-   - **Project URL** → `SUPABASE_URL`
-   - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` on Render only.
+  - **Project URL** → `SUPABASE_URL`
+  - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` on Render only.
 
 **Security:** Use the **service role** key only on the backend. Do **not** ship it to Vercel client bundles. Real-time gameplay does not query the DB; only match completion writes data.
 
@@ -241,18 +245,20 @@ For a **custom room/leaderboard client** (not the built-in Find match UI), conne
 
 Connect with optional query: `displayName`, `clientPublicId` (UUID).
 
-| Event | Direction | Purpose |
-|--------|-----------|---------|
-| `connected` | server → client | `socketId`, `userId`, public `config`. |
-| `room:create` | client → server | Create room; optional `maxPlayers`. Ack: `{ ok, room }`. |
-| `room:join` | client → server | `{ code, displayName }`. Ack: `{ ok, room }`. |
-| `room:leave` | client → server | Leave current room. |
-| `room:state` | server → room | Full public room snapshot. |
-| `game:start` | client → server | Host starts match (min players, lobby → countdown → rounds). |
-| `game:event` | server → room | `round:started`, `round:ended`, `game:ended`, `game:aborted`. |
-| `game:position` | client → server | `{ x, y, seq? }` — rate-limited; relayed as `player:position` to peers. |
-| `game:action` | client → server | `{ type, meta? }` — validated, rate-limited; relayed as `player:action`. |
-| `error:msg` | server → client | Validation / business errors if no ack callback. |
+
+| Event           | Direction       | Purpose                                                                  |
+| --------------- | --------------- | ------------------------------------------------------------------------ |
+| `connected`     | server → client | `socketId`, `userId`, public `config`.                                   |
+| `room:create`   | client → server | Create room; optional `maxPlayers`. Ack: `{ ok, room }`.                 |
+| `room:join`     | client → server | `{ code, displayName }`. Ack: `{ ok, room }`.                            |
+| `room:leave`    | client → server | Leave current room.                                                      |
+| `room:state`    | server → room   | Full public room snapshot.                                               |
+| `game:start`    | client → server | Host starts match (min players, lobby → countdown → rounds).             |
+| `game:event`    | server → room   | `round:started`, `round:ended`, `game:ended`, `game:aborted`.            |
+| `game:position` | client → server | `{ x, y, seq? }` — rate-limited; relayed as `player:position` to peers.  |
+| `game:action`   | client → server | `{ type, meta? }` — validated, rate-limited; relayed as `player:action`. |
+| `error:msg`     | server → client | Validation / business errors if no ack callback.                         |
+
 
 **Cheating note:** Final scores for the generic round loop are applied only in `GameSession` on the server. Position/action payloads are sanitized and throttled; game-specific win/loss should still be validated server-side when you add rules.
 
@@ -263,7 +269,7 @@ Connect with optional query: `displayName`, `clientPublicId` (UUID).
 - **Build mode** — Place tiles; sabotage profiles stay hidden until play.
 - **Play mode** — Reach the goal while sabotage, hazards, and timing matter.
 - **Local profiles + leaderboard** — Per-browser saves and rankings.
-- **Multiplayer mode** — Legacy **2-player** queue (`mp:*`): alternating build/play rounds, shared finale, rematch. See earlier sections for the new **room** system.
+- **Multiplayer mode** — Legacy **2-player** queue (`mp:`*): alternating build/play rounds, shared finale, rematch. See earlier sections for the new **room** system.
 
 ---
 
