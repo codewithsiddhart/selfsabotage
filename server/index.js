@@ -16,6 +16,8 @@ const { initSockets } = require("./socket");
 const { healthHandler } = require("./controllers/healthController");
 const { leaderboardHandler } = require("./controllers/leaderboardController");
 const { rootHandler } = require("./controllers/rootController");
+const { registerHandler, loginHandler } = require("./controllers/authController");
+const { globalLeaderboardHandler, addGlobalPointsHandler, authJwt } = require("./controllers/globalLeaderboardController");
 const { initMultiplayer } = require("../mp-server");
 const { isOriginAllowed } = require("./utils/corsAllow");
 
@@ -43,6 +45,10 @@ app.options("*", dynamicCors);
 
 app.get("/health", healthHandler);
 app.get("/api/leaderboard", leaderboardHandler);
+app.get("/api/leaderboard/global", globalLeaderboardHandler);
+app.post("/api/leaderboard/add-points", authJwt, addGlobalPointsHandler);
+app.post("/api/auth/register", registerHandler);
+app.post("/api/auth/login", loginHandler);
 
 if (process.env.SERVE_STATIC === "true") {
   const root = path.join(__dirname, "..");

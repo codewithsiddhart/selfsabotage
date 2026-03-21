@@ -116,11 +116,14 @@ body {
 }
 
 .app {
-  max-width: 1240px;
+  max-width: min(1480px, 100%);
+  width: 100%;
   margin: 0 auto;
   padding: 18px;
   display: grid;
   gap: 14px;
+  min-height: 100vh;
+  box-sizing: border-box;
 }
 
 .topbar {
@@ -258,6 +261,20 @@ html[data-theme="light"] .btn {
   border-color: rgba(255, 77, 109, 0.42);
 }
 
+.btn.subtle {
+  font-size: 12px;
+  padding: 8px 10px;
+  opacity: 0.92;
+}
+
+.btn.linkish {
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  font-weight: 800;
+  color: var(--accent);
+}
+
 .btn[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
@@ -266,11 +283,26 @@ html[data-theme="light"] .btn {
 
 .main {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
   position: relative;
   z-index: 2;
+  min-height: 0;
+}
+
+@media (min-width: 1100px) {
+  .stageWrap {
+    display: flex;
+    flex-direction: column;
+    min-height: min(78vh, 820px);
+  }
+  canvas#game {
+    flex: 1;
+    width: 100%;
+    max-height: min(78vh, 820px);
+    object-fit: contain;
+  }
 }
 
 .panel {
@@ -1277,6 +1309,142 @@ html[data-theme="light"] .mpOverlayX {
   }
   .hud .mpHud:not(.hidden) {
     order: -1;
+  }
+}
+
+/* Mobile build: hide clutter like play fullscreen */
+@media (max-width: 768px) {
+  .app.mobileBuildFullscreen .footer,
+  .app.mobileBuildFullscreen .brand .subtitle,
+  .app.mobileBuildFullscreen .topActions > .btn:not(#buildModeBtn):not(#playModeBtn):not(#authAccountBtn),
+  .app.mobileBuildFullscreen .topActions > .profileChip {
+    display: none !important;
+  }
+  .app.mobileBuildFullscreen .panel .help {
+    display: none !important;
+  }
+  .app.mobileBuildFullscreen .main {
+    grid-template-columns: 1fr;
+  }
+  .app.mobileBuildFullscreen .stageWrap {
+    padding: 0;
+    border-radius: 0;
+  }
+  .app.mobileBuildFullscreen .topbar {
+    padding: 10px 12px;
+  }
+}
+
+.mobileExitBuildBtn {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 120;
+  min-height: 48px;
+  padding: 12px 16px;
+  font-weight: 1000;
+  border-radius: 14px;
+  border: 1px solid var(--panelBorder);
+  background: rgba(255, 77, 109, 0.2);
+  color: var(--text);
+  box-shadow: 0 8px 28px var(--shadow);
+  touch-action: manipulation;
+}
+.mobileExitBuildBtn.hidden {
+  display: none !important;
+}
+
+.mpChatDock {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: 38vh;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid var(--panelBorder);
+  background: rgba(10, 12, 26, 0.92);
+  box-shadow: 0 12px 40px var(--shadow);
+  backdrop-filter: blur(10px);
+}
+.mpChatDock.hidden {
+  display: none !important;
+}
+.mpChatMessages {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 22vh;
+  font-size: 12px;
+  line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mpChatLine {
+  word-break: break-word;
+  color: var(--text);
+}
+.mpChatInputRow {
+  display: flex;
+  gap: 8px;
+}
+.mpChatInput {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--panelBorder);
+  padding: 0 10px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+}
+.mpChatSend {
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.authModal .authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.authLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 900;
+  font-size: 12px;
+  color: var(--muted);
+}
+.authIcon {
+  font-size: 14px;
+}
+.authSubmitBtn {
+  margin-top: 6px;
+  min-height: 48px;
+}
+.authStatus {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+.btn.mpRematchConfirmed {
+  background: rgba(45, 212, 191, 0.35) !important;
+  border-color: rgba(45, 212, 191, 0.65) !important;
+  color: var(--text) !important;
+}
+
+@media (max-width: 768px) {
+  .mpChatDock {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
   }
 }
 

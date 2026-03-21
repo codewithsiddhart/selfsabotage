@@ -60,3 +60,29 @@ drop policy if exists "deny_all_scores" on public.scores;
 create policy "deny_all_users" on public.users for all using (false);
 create policy "deny_all_rooms" on public.rooms for all using (false);
 create policy "deny_all_scores" on public.scores for all using (false);
+
+-- Account login (separate from gameplay `users`). Server-only via service role.
+create table if not exists public.auth_users (
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique check (char_length(username) >= 1 and char_length(username) <= 32),
+  password_hash text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.global_player_stats (
+  user_id uuid primary key references public.auth_users (id) on delete cascade,
+  points bigint not null default 0,
+  stats jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_global_stats_points on public.global_player_stats (points desc);
+
+alter table public.auth_users enable row level security;
+alter table public.global_player_stats enable row level security;
+
+drop policy if exists "deny_all_auth_users" on public.auth_users;
+drop policy if exists "deny_all_global_player_stats" on public.global_player_stats;
+
+create policy "deny_all_auth_users" on public.auth_users for all using (false);
+create policy "deny_all_global_player_stats" on public.global_player_stats for all using (false);

@@ -3,11 +3,24 @@
  * © 2026 NeuroGlitch. All Rights Reserved.
  */
 
-const MP_FINAL_LEVEL_ID = "builtin_nomercy";
+/** Random final round: pick one of these hard built-ins (both players same level). */
+const MP_FINAL_LEVEL_POOL = [
+  "builtin_nomercy",
+  "builtin_gauntlet",
+  "builtin_summit",
+  "builtin_chaosrun",
+  "builtin_finaltest",
+  "builtin_tower",
+  "builtin_endurance",
+];
 const ROUND_BUILD_PLAY_POINTS = 100;
-const ROUND3_WIN_BASE = 80;
-const ROUND3_TIME_BONUS_MAX = 120; // extra points scaled by speed
+const ROUND_FINAL_WIN_BASE = 80;
+const ROUND_FINAL_TIME_BONUS_MAX = 120;
 const REMATCH_WAIT_MS = 45000;
+const BUILD_PLAY_ROUNDS = 4;
+const CHAT_MAX_LEN = 200;
+const CHAT_MIN_INTERVAL_MS = 400;
+const SPECTATE_THROTTLE_MS = 90;
 
 /**
  * @param {import("socket.io").Server} io
@@ -23,13 +36,15 @@ function initMultiplayer(io) {
    * @property {[string, string]} names
    * @property {number} round
    * @property {[number, number]} scores
-   * @property {"build"|"play"|"round3"|"ended"} phase
+   * @property {"build"|"play"|"final"|"ended"} phase
    * @property {0|1} builderIdx
- * @property {string[] | null} round1Level
- * @property {string[] | null} round2Level
-   * @property {number | null} round3Seed
+   * @property {string | null} finalLevelId
+   * @property {number | null} playRunSeed
+   * @property {{0?: { t: number }, 1?: { t: number }}} lastChatAt
+   * @property {{0?: number, 1?: number}} lastSpectateAt
    * @property {{0?:boolean,1?:boolean}} rematchVotes
    * @property {ReturnType<typeof setTimeout> | null} rematchTimer
+   * @property {{0?: object, 1?: object}} finalResults
    */
 
   /** @type {Map<string, Match>} */
@@ -110,6 +125,7 @@ function initMultiplayer(io) {
    */
   function startPlayPhase(m, tilesFlat) {
     m.phase = "play";
+    m.playRunSeed = (Math.floor(Math.random() * 0xffffffff) ^ Date.now()) >>> 0;
     const b = m.builderIdx;
     const p = 1 - b;
     const sB = io.sockets.sockets.get(m.socketIds[b]);
@@ -119,16 +135,16 @@ function initMultiplayer(io) {
         round: m.round,
         tilesFlat,
         builderName: m.names[b],
+        runSeed: m.playRunSeed,
       });
       emitScores(sP, m);
     }
     if (sB) {
-      sB.emit("mp:phase", {
-        phase: "spectateBuild",
+      sB.emit("mp:spectatePlayStart", {
         round: m.round,
-        builder: true,
-        opponentName: m.names[p],
-        message: "Opponent is playing your level.",
+        tilesFlat,
+        runSeed: m.playRunSeed,
+        runnerName: m.names[p],
       });
       emitScores(sB, m);
     }
@@ -137,30 +153,36 @@ function initMultiplayer(io) {
   /**
    * @param {Match} m
    */
+  function startFinalRound(m) {
+    m.phase = "final";
+    m.finalLevelId = MP_FINAL_LEVEL_POOL[Math.floor(Math.random() * MP_FINAL_LEVEL_POOL.length)];
+    const seed = (Math.floor(Math.random() * 0xffffffff) ^ Date.now()) >>> 0;
+    m.finalResults = {};
+    for (let i = 0; i < 2; i++) {
+      const sock = io.sockets.sockets.get(m.socketIds[i]);
+      if (sock) {
+        sock.emit("mp:round3", {
+          levelId: m.finalLevelId,
+          runSeed: seed,
+          countdownMs: 3200,
+          opponentName: m.names[1 - i],
+          roundLabel: 5,
+        });
+        emitScores(sock, m);
+      }
+    }
+  }
+
   function advanceAfterBuildPlayRound(m) {
-    if (m.round === 1) {
-      m.round = 2;
-      m.builderIdx = 1;
+    if (m.round < BUILD_PLAY_ROUNDS) {
+      m.round += 1;
+      m.builderIdx = /** @type {0|1} */ (1 - m.builderIdx);
       startBuildPhase(m);
       return;
     }
-    if (m.round === 2) {
-      m.round = 3;
-      m.phase = "round3";
-      m.round3Seed = (Math.floor(Math.random() * 0xffffffff) ^ Date.now()) >>> 0;
-      m.round3Results = {};
-      for (let i = 0; i < 2; i++) {
-        const sock = io.sockets.sockets.get(m.socketIds[i]);
-        if (sock) {
-          sock.emit("mp:round3", {
-            levelId: MP_FINAL_LEVEL_ID,
-            runSeed: m.round3Seed,
-            countdownMs: 3200,
-            opponentName: m.names[1 - i],
-          });
-          emitScores(sock, m);
-        }
-      }
+    if (m.round === BUILD_PLAY_ROUNDS) {
+      m.round = 5;
+      startFinalRound(m);
     }
   }
 
@@ -251,12 +273,13 @@ function initMultiplayer(io) {
           scores: [0, 0],
           phase: "build",
           builderIdx: 0,
-          round1Level: null,
-          round2Level: null,
-          round3Seed: null,
-          round3Results: undefined,
+          finalLevelId: null,
+          playRunSeed: null,
+          lastChatAt: {},
+          lastSpectateAt: {},
           rematchVotes: {},
           rematchTimer: null,
+          finalResults: undefined,
         };
         matches.set(m.id, m);
         socketToMatch.set(a.socketId, m.id);
@@ -293,14 +316,64 @@ function initMultiplayer(io) {
       if (!m || m.phase !== "build") return;
       const idx = m.socketIds.indexOf(socket.id);
       if (idx !== m.builderIdx) return;
+      if (m.round > BUILD_PLAY_ROUNDS) return;
       const tilesFlat = payload && payload.tilesFlat;
       if (!Array.isArray(tilesFlat) || tilesFlat.length !== 30 * 18) {
         socket.emit("mp:error", { message: "Invalid level data." });
         return;
       }
-      if (m.round === 1) m.round1Level = tilesFlat;
-      else if (m.round === 2) m.round2Level = tilesFlat;
       startPlayPhase(m, tilesFlat);
+    });
+
+    socket.on("mp:spectateTick", (payload) => {
+      const mid = socketToMatch.get(socket.id);
+      if (!mid) return;
+      const m = matches.get(mid);
+      if (!m || m.phase !== "play") return;
+      const idx = m.socketIds.indexOf(socket.id);
+      if (idx !== 1 - m.builderIdx) return;
+      const now = Date.now();
+      const last = m.lastSpectateAt[idx] || 0;
+      if (now - last < SPECTATE_THROTTLE_MS) return;
+      m.lastSpectateAt[idx] = now;
+      const b = m.builderIdx;
+      const sB = io.sockets.sockets.get(m.socketIds[b]);
+      if (!sB || !payload || typeof payload !== "object") return;
+      const x = Number(payload.x);
+      const y = Number(payload.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      sB.emit("mp:spectateTick", {
+        x,
+        y,
+        vx: Number.isFinite(Number(payload.vx)) ? Number(payload.vx) : 0,
+        vy: Number.isFinite(Number(payload.vy)) ? Number(payload.vy) : 0,
+      });
+    });
+
+    socket.on("mp:chat", (payload) => {
+      const mid = socketToMatch.get(socket.id);
+      if (!mid) return;
+      const m = matches.get(mid);
+      if (!m || m.phase === "ended") return;
+      const idx = m.socketIds.indexOf(socket.id);
+      if (idx !== 0 && idx !== 1) return;
+      const now = Date.now();
+      const slot = m.lastChatAt[idx];
+      if (slot && now - slot.t < CHAT_MIN_INTERVAL_MS) return;
+      m.lastChatAt[idx] = { t: now };
+      let text = payload && String(payload.text || "").trim();
+      if (!text) return;
+      text = text.slice(0, CHAT_MAX_LEN);
+      const msg = {
+        id: `${mid}_${now}_${idx}`,
+        from: m.names[idx],
+        text,
+        t: now,
+      };
+      for (const sid of m.socketIds) {
+        const s = io.sockets.sockets.get(sid);
+        if (s) s.emit("mp:chat", msg);
+      }
     });
 
     socket.on("mp:runEnd", (payload) => {
@@ -319,7 +392,7 @@ function initMultiplayer(io) {
       const mid = socketToMatch.get(socket.id);
       if (!mid) return;
       const m = matches.get(mid);
-      if (!m || m.phase !== "round3" || !m.round3Results) return;
+      if (!m || m.phase !== "final" || !m.finalResults) return;
       const idx = /** @type {0|1} */ (m.socketIds.indexOf(socket.id));
       if (idx !== 0 && idx !== 1) return;
       const outcome = payload && payload.outcome === "win" ? "win" : "lose";
@@ -327,18 +400,18 @@ function initMultiplayer(io) {
 
       function timeBonus(ms) {
         const sec = ms / 1000;
-        return Math.min(ROUND3_TIME_BONUS_MAX, Math.max(0, Math.round((90 - sec) * 1.5)));
+        return Math.min(ROUND_FINAL_TIME_BONUS_MAX, Math.max(0, Math.round((90 - sec) * 1.5)));
       }
 
       let pts = 0;
-      if (outcome === "win") pts = ROUND3_WIN_BASE + timeBonus(timeMs);
-      m.round3Results[idx] = { outcome, timeMs, pts };
+      if (outcome === "win") pts = ROUND_FINAL_WIN_BASE + timeBonus(timeMs);
+      m.finalResults[idx] = { outcome, timeMs, pts };
 
-      const r = m.round3Results;
+      const r = m.finalResults;
       if (r[0] != null && r[1] != null) {
         const a = r[0];
         const b = r[1];
-        m.round3Results = {};
+        m.finalResults = {};
 
         m.scores[0] += a.pts;
         m.scores[1] += b.pts;
@@ -369,9 +442,11 @@ function initMultiplayer(io) {
       }
 
       m.rematchVotes[idx] = true;
+      const votes = { ...m.rematchVotes };
+      const accepted = [votes[0], votes[1]].filter(Boolean).length;
       for (const sid of m.socketIds) {
         const s = io.sockets.sockets.get(sid);
-        if (s) s.emit("mp:rematchStatus", { votes: { ...m.rematchVotes } });
+        if (s) s.emit("mp:rematchStatus", { votes, acceptedCount: accepted, needed: 2 });
       }
 
       if (m.rematchVotes[0] && m.rematchVotes[1]) {
@@ -380,10 +455,11 @@ function initMultiplayer(io) {
         m.round = 1;
         m.scores = [0, 0];
         m.builderIdx = 0;
-        m.round1Level = null;
-        m.round2Level = null;
-        m.round3Seed = null;
-        m.round3Results = undefined;
+        m.finalLevelId = null;
+        m.playRunSeed = null;
+        m.finalResults = undefined;
+        m.lastChatAt = {};
+        m.lastSpectateAt = {};
         m.phase = "build";
         for (const sid of m.socketIds) {
           const s = io.sockets.sockets.get(sid);
@@ -411,4 +487,4 @@ function initMultiplayer(io) {
   });
 }
 
-module.exports = { initMultiplayer, MP_FINAL_LEVEL_ID };
+module.exports = { initMultiplayer, MP_FINAL_LEVEL_POOL };

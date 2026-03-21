@@ -122,16 +122,53 @@
   const elMpHudRound = $("mpHudRound");
   const elMpHudRole = $("mpHudRole");
   const elMpHudScore = $("mpHudScore");
+  const elRotateOverlayMessage = $("rotateOverlayMessage");
+  const elMobileExitBuildBtn = /** @type {HTMLButtonElement | null} */ ($("mobileExitBuildBtn"));
+  const elMpChatDock = $("mpChatDock");
+  const elMpChatMessages = $("mpChatMessages");
+  const elMpChatInput = /** @type {HTMLInputElement | null} */ ($("mpChatInput"));
+  const elMpChatSend = /** @type {HTMLButtonElement | null} */ ($("mpChatSend"));
+  const elAuthAccountBtn = /** @type {HTMLButtonElement | null} */ ($("authAccountBtn"));
+  const elAuthModal = $("authModal");
+  const elAuthBackdrop = $("authBackdrop");
+  const elAuthModalCloseBtn = /** @type {HTMLButtonElement | null} */ ($("authModalCloseBtn"));
+  const elAuthFormLogin = $("authFormLogin");
+  const elAuthFormRegister = $("authFormRegister");
+  const elAuthLoginUser = /** @type {HTMLInputElement | null} */ ($("authLoginUser"));
+  const elAuthLoginPass = /** @type {HTMLInputElement | null} */ ($("authLoginPass"));
+  const elAuthRegUser = /** @type {HTMLInputElement | null} */ ($("authRegUser"));
+  const elAuthRegPass = /** @type {HTMLInputElement | null} */ ($("authRegPass"));
+  const elAuthLoginBtn = /** @type {HTMLButtonElement | null} */ ($("authLoginBtn"));
+  const elAuthRegisterBtn = /** @type {HTMLButtonElement | null} */ ($("authRegisterBtn"));
+  const elAuthShowRegisterBtn = /** @type {HTMLButtonElement | null} */ ($("authShowRegisterBtn"));
+  const elAuthShowLoginBtn = /** @type {HTMLButtonElement | null} */ ($("authShowLoginBtn"));
+  const elAuthStatus = $("authStatus");
+  const elGlobalLeaderboardList = $("globalLeaderboardList");
+  const elGlobalLbHint = $("globalLbHint");
+
+  const AUTH_TOKEN_KEY = "ssb_auth_token_v1";
+  const API_BASE = (() => {
+    try {
+      const u =
+        typeof window !== "undefined" && typeof window.MULTIPLAYER_SERVER_URL === "string"
+          ? String(window.MULTIPLAYER_SERVER_URL).trim().replace(/\/$/, "")
+          : "";
+      return u || "";
+    } catch {
+      return "";
+    }
+  })();
 
   /** Online match client state (Socket.IO). Declared early for menu/exit handlers. */
   const mpSession = {
     active: false,
     /** @type {any} */
     socket: null,
-    /** @type {"off"|"queue"|"mpBuild"|"mpWaitBuild"|"mpSpectate"|"mpPlayOpponent"|"mpRound3"|"mpMatchEnd"} */
+    /** @type {"off"|"queue"|"mpBuild"|"mpWaitBuild"|"mpSpectate"|"mpSpectatePlay"|"mpPlayOpponent"|"mpRound3"|"mpMatchEnd"} */
     phase: "off",
     youIndex: 0,
     opponentName: "",
+    rematchSelfConfirmed: false,
   };
 
   // ---------- Constants ----------
@@ -1011,9 +1048,17 @@
       if (deviceMode) elExitToMenuBtn.classList.remove("hidden");
       else elExitToMenuBtn.classList.add("hidden");
     }
+    const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth;
     if (elRotateOverlay) {
-      const showRotate = deviceMode === "mobile" && mode === "play" && play && !play.ended;
-      if (showRotate) {
+      const needLandscape =
+        deviceMode === "mobile" &&
+        portrait &&
+        ((mode === "play" && play && !play.ended) || mode === "build");
+      if (elRotateOverlayMessage) {
+        elRotateOverlayMessage.textContent =
+          mode === "build" ? "Rotate device to landscape (build mode)" : "Rotate device to landscape";
+      }
+      if (needLandscape) {
         elRotateOverlay.classList.remove("hidden");
         elRotateOverlay.setAttribute("aria-hidden", "false");
       } else {
@@ -1021,10 +1066,16 @@
         elRotateOverlay.setAttribute("aria-hidden", "true");
       }
     }
+    if (elMobileExitBuildBtn) {
+      const showExit = deviceMode === "mobile" && mode === "build";
+      elMobileExitBuildBtn.classList.toggle("hidden", !showExit);
+    }
     const app = document.querySelector(".app");
     if (app) {
-      app.classList.toggle("mobilePlayFullscreen", deviceMode === "mobile" && mode === "play" && play && !play.ended);
+      const playFs = deviceMode === "mobile" && mode === "play" && play && !play.ended;
+      app.classList.toggle("mobilePlayFullscreen", playFs);
       app.classList.toggle("mobileBuild", deviceMode === "mobile" && mode === "build");
+      app.classList.toggle("mobileBuildFullscreen", deviceMode === "mobile" && mode === "build");
     }
   }
 
@@ -1054,8 +1105,50 @@
     if (elMpMatchEnd) elMpMatchEnd.classList.add("hidden");
     if (elMpSubmitLevelBtn) elMpSubmitLevelBtn.classList.add("hidden");
     if (elMpBuildHint) elMpBuildHint.classList.add("hidden");
+    if (elMpChatDock) elMpChatDock.classList.add("hidden");
+    if (elMpChatMessages) elMpChatMessages.innerHTML = "";
+    if (elMpRematchBtn) {
+      elMpRematchBtn.textContent = "Rematch (0/2)";
+      elMpRematchBtn.classList.remove("mpRematchConfirmed");
+    }
+    mpSession.rematchSelfConfirmed = false;
     elBuildBtn.disabled = false;
     elPlayBtn.disabled = false;
+  }
+
+  function syncMpChatDock() {
+    if (!elMpChatDock) return;
+    const on =
+      mpSession.active &&
+      mpSession.socket &&
+      mpSession.phase !== "off" &&
+      mpSession.phase !== "queue" &&
+      mpSession.phase !== "mpMatchEnd";
+    elMpChatDock.classList.toggle("hidden", !on);
+  }
+
+  function appendMpChatLine(msg) {
+    if (!elMpChatMessages || !msg) return;
+    const row = document.createElement("div");
+    row.className = "mpChatLine";
+    row.dataset.msgId = String(msg.id || "");
+    row.textContent = `${msg.from}: ${msg.text}`;
+    elMpChatMessages.appendChild(row);
+    elMpChatMessages.scrollTop = elMpChatMessages.scrollHeight;
+  }
+
+  if (elMobileExitBuildBtn) {
+    elMobileExitBuildBtn.addEventListener("click", () => {
+      if (mpSession.active && mpSession.phase === "mpBuild") {
+        showToast("Finish your build and tap Submit, or use ✕ Menu to leave the match.");
+        return;
+      }
+      if (mpSession.active && (mpSession.phase === "mpWaitBuild" || mpSession.phase === "mpSpectatePlay")) {
+        showToast("Use ✕ Menu to leave the match.");
+        return;
+      }
+      setMode("play");
+    });
   }
 
   if (elExitToMenuBtn) {
@@ -1085,7 +1178,7 @@
 
   function syncTouchControlsVisibility() {
     if (!elTouchControls) return;
-    if (deviceMode === "mobile" && mode === "play") {
+    if (deviceMode === "mobile" && mode === "play" && play && !play.spectatorMode) {
       elTouchControls.classList.remove("hidden");
       elTouchControls.setAttribute("aria-hidden", "false");
     } else {
@@ -2300,7 +2393,44 @@
     if (e.key === "Enter") refreshLeaderboard(elLeaderboardSearchInput.value);
   });
 
+  async function refreshGlobalLeaderboardList() {
+    if (!elGlobalLeaderboardList) return;
+    elGlobalLeaderboardList.innerHTML = "";
+    if (!API_BASE) {
+      elGlobalLeaderboardList.appendChild(makeEmptyLine("Set multiplayer-config.js (API URL) to load global board."));
+      return;
+    }
+    try {
+      const r = await fetch(`${API_BASE}/api/leaderboard/global?limit=50`);
+      const j = await r.json();
+      const rows = (j && j.leaderboard) || [];
+      if (!rows.length) {
+        elGlobalLeaderboardList.appendChild(makeEmptyLine("No global entries yet — register & play online."));
+        return;
+      }
+      for (const row of rows) {
+        const item = document.createElement("div");
+        item.className = "listItem";
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = `#${row.rank} ${row.username}`;
+        const sub = document.createElement("div");
+        sub.className = "sub";
+        sub.textContent = `Points ${row.points}`;
+        meta.appendChild(name);
+        meta.appendChild(sub);
+        item.appendChild(meta);
+        elGlobalLeaderboardList.appendChild(item);
+      }
+    } catch {
+      elGlobalLeaderboardList.appendChild(makeEmptyLine("Could not load global leaderboard."));
+    }
+  }
+
   function refreshLeaderboard(filter = "") {
+    void refreshGlobalLeaderboardList();
     const q = (filter || "").trim().toLowerCase();
     const players = Object.values(save.players)
       .filter((p) => !q || p.name.toLowerCase().includes(q))
@@ -2450,7 +2580,12 @@
   function setMode(next) {
     if (next === mode) return;
     if (next === "build") {
-      if (mpSession.active && (mpSession.phase === "mpPlayOpponent" || mpSession.phase === "mpRound3")) {
+      if (
+        mpSession.active &&
+        (mpSession.phase === "mpPlayOpponent" ||
+          mpSession.phase === "mpRound3" ||
+          mpSession.phase === "mpSpectatePlay")
+      ) {
         showToast("Finish the online run first (or use ✕ Menu to leave).");
         return;
       }
@@ -2460,7 +2595,12 @@
         showToast("Submit your level to your opponent (multiplayer).");
         return;
       }
-      if (mpSession.active && (mpSession.phase === "mpWaitBuild" || mpSession.phase === "mpSpectate")) {
+      if (
+        mpSession.active &&
+        (mpSession.phase === "mpWaitBuild" ||
+          mpSession.phase === "mpSpectate" ||
+          mpSession.phase === "mpSpectatePlay")
+      ) {
         showToast("You can't enter play mode during this multiplayer phase.");
         return;
       }
@@ -2527,9 +2667,9 @@
     elRestartBtn.disabled = false;
     elPlayBtn.classList.add("primary");
     elBuildBtn.classList.remove("primary");
-    elStatusPill.textContent = "Play: reach the Goal";
+    elStatusPill.textContent = mpOpts && mpOpts.spectator ? "Spectating" : "Play: reach the Goal";
     elRunHint.textContent = "Sabotage is active (seeded this run).";
-    showToast("Play mode. Sabotage activated.");
+    if (!mpOpts || !mpOpts.spectator) showToast("Play mode. Sabotage activated.");
     if (sourceLevelId) {
       builtinLevelStats[sourceLevelId] = builtinLevelStats[sourceLevelId] || { attempts: 0, bestTimeMs: Infinity };
     }
@@ -2542,7 +2682,12 @@
 
   function restartPlay() {
     if (mode !== "play") return;
-    if (mpSession.active && (mpSession.phase === "mpPlayOpponent" || mpSession.phase === "mpRound3")) {
+    if (
+      mpSession.active &&
+      (mpSession.phase === "mpPlayOpponent" ||
+        mpSession.phase === "mpRound3" ||
+        mpSession.phase === "mpSpectatePlay")
+    ) {
       showToast("Restart is disabled during online rounds.");
       return;
     }
@@ -2570,7 +2715,7 @@
    * @param {number|null} builtinIndex
    * @param {number} runAttempts
    * @param {{doubleJump:boolean,speedBoost:boolean,protection:boolean}} [selectedPowerups] If from prev run (e.g. Next level), reuse without consuming.
-   * @param {{runSeed?:number,noPowerups?:boolean,skipProfileMutation?:boolean}|null} [mpOpts]
+   * @param {{runSeed?:number,noPowerups?:boolean,skipProfileMutation?:boolean,spectator?:boolean,noSpawnProtect?:boolean}|null} [mpOpts]
    */
   function createPlayState(sourceLevelId, builtinIndex = null, runAttempts = 1, selectedPowerups = null, mpOpts = null) {
     const t0 = performance.now();
@@ -2652,6 +2797,11 @@
       timerRemainingMs: timerLimitMs,
       usedPowerups,
       mpOpts: mpOpts || null,
+      spectatorMode: !!(mpOpts && mpOpts.spectator),
+      mpSpectateBuffer: /** @type {{x:number,y:number,vx:number,vy:number}|null} */ (null),
+      spawnProtectUntil:
+        mpOpts && mpOpts.noSpawnProtect ? 0 : mpOpts && mpOpts.spectator ? 0 : t0 + 2000,
+      _spectEmitAcc: 0,
     };
 
     if (usedPowerups.speedBoost) state.effects.speedBoostUntil = t0 + 3500;
@@ -2686,6 +2836,20 @@
     }
   }
 
+  /** Start tile: no sabotage / never deadly (spawn always stable). */
+  function neutralSabotageProfile() {
+    return {
+      motion: "none",
+      shiftAmp: 0,
+      shiftSpeed: 0,
+      shiftPhase: 0,
+      platform: { type: "none", delayMs: 0, flickerMs: 0 },
+      spikes: { type: "none", delayMs: 0, periodMs: 0, duty: 0.5 },
+      pad: { type: "none", strength: 1, delayMs: 0, failChance: 0 },
+      hex: { type: "none", durationMs: 0, activateAtMs: 0 },
+    };
+  }
+
   function makeRuntimeTiles(runSeed) {
     /** @type {RuntimeTile[][]} */
     const out = [];
@@ -2697,7 +2861,7 @@
         const type = raw === Tile.pathBlock ? Tile.empty : raw;
         const tileSeed = hash2(x, y) ^ levelSeed ^ runSeed;
         const rng = mulberry32(tileSeed >>> 0);
-        const sab = makeSabotageProfile(type, rng);
+        const sab = type === Tile.start ? neutralSabotageProfile() : makeSabotageProfile(type, rng);
         const rt = /** @type {RuntimeTile} */ ({
           type,
           sab,
@@ -2711,6 +2875,10 @@
           cursedActive: false,
           cursedUntil: 0,
         });
+        if (type === Tile.start) {
+          rt.sab = neutralSabotageProfile();
+          rt.deadly = false;
+        }
         row.push(rt);
       }
       out.push(row);
@@ -2855,6 +3023,24 @@
     }
     updateTimerPill(play);
 
+    // Spectator: deterministic tiles + network player only (no local physics / death)
+    if (play.spectatorMode) {
+      updateRuntimeTiles(play, dt);
+      const buf = play.mpSpectateBuffer;
+      if (buf) {
+        play.player.x = buf.x;
+        play.player.y = buf.y;
+        play.player.vx = buf.vx;
+        play.player.vy = buf.vy;
+      }
+      const followSpeed = 0.04 * (dt / 16);
+      play.cam.followX += (play.player.x - play.cam.followX) * Math.min(1, followSpeed * 4);
+      play.cam.followY += (play.player.y - play.cam.followY) * Math.min(1, followSpeed * 4);
+      updateParticles(play, dt);
+      decayShake(play, dt);
+      return;
+    }
+
     // Hammer: one per level, spawn after delay
     if (play.sourceLevelId && !play.hammer && play.now - play.t0 > 6000) {
       const p = play.player;
@@ -2866,7 +3052,10 @@
       const ha = { x: play.hammer.x - 12, y: play.hammer.y - 20, w: 24, h: 24 };
       const pa = playerAABB(play.player, play.player.x, play.player.y);
       if (aabbOverlap(ha, pa)) {
-        if (play.usedPowerups.protection) {
+        const prot = play.spawnProtectUntil && play.now < play.spawnProtectUntil;
+        if (prot) {
+          play.hammer.active = false;
+        } else if (play.usedPowerups.protection) {
           play.usedPowerups.protection = false;
           addParticles(play, play.player.x, play.player.y + play.player.h / 2, 8, true);
           addShake(play, 8);
@@ -2881,7 +3070,13 @@
 
     // Action hotkeys (play-only)
     if (input.wasPressed(keyForAction("restart"))) {
-      if (!mpSession.active || (mpSession.phase !== "mpPlayOpponent" && mpSession.phase !== "mpRound3")) restartPlay();
+      if (
+        !mpSession.active ||
+        (mpSession.phase !== "mpPlayOpponent" &&
+          mpSession.phase !== "mpRound3" &&
+          mpSession.phase !== "mpSpectatePlay")
+      )
+        restartPlay();
       return;
     }
 
@@ -2893,6 +3088,25 @@
     updateRuntimeTiles(play, dt);
     stepPlayer(play, dt);
     checkOutcome(play);
+
+    if (
+      mpSession.active &&
+      mpSession.socket &&
+      mpSession.phase === "mpPlayOpponent" &&
+      !play.spectatorMode &&
+      !play.ended
+    ) {
+      play._spectEmitAcc += dt;
+      if (play._spectEmitAcc >= 90) {
+        play._spectEmitAcc = 0;
+        mpSession.socket.emit("mp:spectateTick", {
+          x: play.player.x,
+          y: play.player.y,
+          vx: play.player.vx,
+          vy: play.player.vy,
+        });
+      }
+    }
 
     // Camera follow (smooth)
     const followSpeed = 0.04 * (dt / 16);
@@ -2939,6 +3153,7 @@
   }
 
   function stepPlayer(state, dt) {
+    if (state.spectatorMode) return;
     const p = state.player;
     const dtSec = dt / 1000;
 
@@ -3125,6 +3340,7 @@
         return;
       }
       if (tile.deadly) {
+        if (state.spawnProtectUntil && state.now < state.spawnProtectUntil) continue;
         if (state.usedPowerups.protection) {
           state.usedPowerups.protection = false;
           addParticles(state, p.x, p.y + p.h / 2, 10, true);
@@ -3772,6 +3988,19 @@
     ctx2.fillRect(2 * dir, 8, 3, 3);
     ctx2.fillRect(6 * dir, 8, 3, 3);
 
+    if (state.spawnProtectUntil && state.now < state.spawnProtectUntil) {
+      ctx2.save();
+      ctx2.globalAlpha = 0.55 + 0.35 * Math.sin((state.now - state.t0) / 160);
+      ctx2.strokeStyle = "rgba(45,212,191,0.95)";
+      ctx2.lineWidth = 3;
+      ctx2.shadowColor = "rgba(45,212,191,0.6)";
+      ctx2.shadowBlur = 12;
+      ctx2.beginPath();
+      ctx2.arc(0, p.h * 0.45, Math.max(p.w, p.h) * 0.85, 0, Math.PI * 2);
+      ctx2.stroke();
+      ctx2.restore();
+    }
+
     // Invert-controls indicator
     if (state.now < state.effects.invertUntil) {
       ctx2.strokeStyle = "rgba(167,139,250,0.75)";
@@ -3919,7 +4148,13 @@
       if (elMpMatchmaking) elMpMatchmaking.classList.add("hidden");
       mpSession.youIndex = typeof data.youIndex === "number" ? data.youIndex : 0;
       mpSession.opponentName = data.opponentName || "Opponent";
+      mpSession.rematchSelfConfirmed = false;
+      if (elMpRematchBtn) {
+        elMpRematchBtn.textContent = "Rematch (0/2)";
+        elMpRematchBtn.classList.remove("mpRematchConfirmed");
+      }
       setMpChromeLocked(true);
+      syncMpChatDock();
     });
 
     socket.on("mp:phase", (data) => {
@@ -3929,6 +4164,11 @@
         hideEndOverlay();
         play = null;
         mode = "build";
+        mpSession.rematchSelfConfirmed = false;
+        if (elMpRematchBtn) {
+          elMpRematchBtn.textContent = "Rematch (0/2)";
+          elMpRematchBtn.classList.remove("mpRematchConfirmed");
+        }
         syncTouchControlsVisibility();
         syncExitAndRotateUI();
         elRestartBtn.disabled = true;
@@ -3938,17 +4178,23 @@
         if (elMpSubmitLevelBtn) elMpSubmitLevelBtn.classList.remove("hidden");
         elBuildBtn.disabled = false;
         elPlayBtn.disabled = false;
-        if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round}`;
+        if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round} / 5`;
         if (elMpHudRole) elMpHudRole.textContent = "You build";
         if (elMpHud) elMpHud.classList.remove("hidden");
         if (elMpBuildHint) elMpBuildHint.classList.remove("hidden");
         showToast("Build, then tap Submit level in the panel.", 2800);
         scheduleValidate();
+        syncMpChatDock();
       } else if (data.phase === "waitOpponent") {
         mpSession.phase = "mpWaitBuild";
         hideEndOverlay();
         play = null;
         mode = "build";
+        mpSession.rematchSelfConfirmed = false;
+        if (elMpRematchBtn) {
+          elMpRematchBtn.textContent = "Rematch (0/2)";
+          elMpRematchBtn.classList.remove("mpRematchConfirmed");
+        }
         syncTouchControlsVisibility();
         syncExitAndRotateUI();
         elRestartBtn.disabled = true;
@@ -3959,25 +4205,51 @@
         if (elMpWaitBuild) elMpWaitBuild.classList.remove("hidden");
         elBuildBtn.disabled = true;
         elPlayBtn.disabled = true;
-        if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round}`;
+        if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round} / 5`;
         if (elMpHudRole) elMpHudRole.textContent = "Wait";
         if (elMpHud) elMpHud.classList.remove("hidden");
         if (elMpBuildHint) elMpBuildHint.classList.add("hidden");
-      } else if (data.phase === "spectateBuild") {
-        mpSession.phase = "mpSpectate";
+        syncMpChatDock();
+      }
+    });
+
+    socket.on("mp:spectatePlayStart", (data) => {
+      hideMpLayerOverlays();
+      if (elMpWaitBuild) elMpWaitBuild.classList.add("hidden");
+      if (data.tilesFlat && data.tilesFlat.length === COLS * ROWS) {
+        loadFlatIntoGrid(data.tilesFlat);
         hideEndOverlay();
-        play = null;
-        mode = "build";
+        const rs = data.runSeed != null ? (data.runSeed >>> 0) : undefined;
+        startPlay("mp_vs", null, null, {
+          runSeed: rs,
+          noPowerups: true,
+          skipProfileMutation: true,
+          spectator: true,
+          noSpawnProtect: true,
+        });
+        mpSession.phase = "mpSpectatePlay";
+        syncTouchControlsVisibility();
+        syncExitAndRotateUI();
         elRestartBtn.disabled = true;
-        if (elMpSpectateTitle) elMpSpectateTitle.textContent = "They’re playing";
-        if (elMpSpectateBody) elMpSpectateBody.textContent = data.message || "Round ends when they finish.";
-        hideMpLayerOverlays();
-        if (elMpSpectate) elMpSpectate.classList.remove("hidden");
-        if (elMpSubmitLevelBtn) elMpSubmitLevelBtn.classList.add("hidden");
-        if (elMpBuildHint) elMpBuildHint.classList.add("hidden");
         elBuildBtn.disabled = true;
         elPlayBtn.disabled = true;
+        elStatusPill.textContent = "Spectating opponent";
+        if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round} / 5`;
+        if (elMpHudRole) elMpHudRole.textContent = "Spectate";
+        if (elMpHud) elMpHud.classList.remove("hidden");
+        syncMpChatDock();
       }
+    });
+
+    socket.on("mp:spectateTick", (data) => {
+      if (mpSession.phase !== "mpSpectatePlay" || !play || !play.spectatorMode) return;
+      if (!data || typeof data.x !== "number" || typeof data.y !== "number") return;
+      play.mpSpectateBuffer = {
+        x: data.x,
+        y: data.y,
+        vx: typeof data.vx === "number" ? data.vx : 0,
+        vy: typeof data.vy === "number" ? data.vy : 0,
+      };
     });
 
     socket.on("mp:playLevel", (data) => {
@@ -3987,12 +4259,20 @@
       if (data.tilesFlat && data.tilesFlat.length === COLS * ROWS) {
         loadFlatIntoGrid(data.tilesFlat);
         hideEndOverlay();
-        startPlay("mp_vs", null, null, { noPowerups: true, skipProfileMutation: true });
+        const rs = data.runSeed != null ? (data.runSeed >>> 0) : undefined;
+        startPlay("mp_vs", null, null, {
+          runSeed: rs,
+          noPowerups: true,
+          skipProfileMutation: true,
+        });
       }
-      if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round}`;
+      if (elMpHudRound) elMpHudRound.textContent = `Round ${data.round} / 5`;
       if (elMpHudRole) elMpHudRole.textContent = "You run";
       if (elMpHud) elMpHud.classList.remove("hidden");
       if (elMpBuildHint) elMpBuildHint.classList.add("hidden");
+      syncTouchControlsVisibility();
+      syncExitAndRotateUI();
+      syncMpChatDock();
     });
 
     socket.on("mp:round3", (data) => {
@@ -4007,6 +4287,8 @@
         const idx = BUILTIN_LEVELS.indexOf(lvl);
         loadFlatIntoGrid(lvl.tilesFlat);
         mpSession.phase = "mpRound3";
+        const rl = typeof data.roundLabel === "number" ? data.roundLabel : 5;
+        if (elMpHudRound) elMpHudRound.textContent = `Round ${rl} / 5 · ${lvl.name}`;
         if (elMpHudRole) elMpHudRole.textContent = "Final";
         hideEndOverlay();
         startPlay(lvl.id, idx, null, {
@@ -4014,12 +4296,47 @@
           noPowerups: true,
           skipProfileMutation: true,
         });
+        syncTouchControlsVisibility();
+        syncExitAndRotateUI();
+        syncMpChatDock();
       });
+    });
+
+    socket.on("mp:chat", (msg) => {
+      if (!msg || !msg.text) return;
+      const id = msg.id ? String(msg.id) : "";
+      if (id && elMpChatMessages && elMpChatMessages.querySelector(`[data-msg-id="${id.replace(/"/g, "")}"]`)) return;
+      appendMpChatLine(msg);
+    });
+
+    socket.on("mp:rematchStatus", (data) => {
+      const need = (data && data.needed) || 2;
+      const acc = (data && data.acceptedCount) || 0;
+      if (elMpRematchBtn) {
+        elMpRematchBtn.textContent = `Rematch (${acc}/${need})`;
+      }
     });
 
     socket.on("mp:scores", (sc) => {
       syncMpHudFromServer(sc);
     });
+
+    async function submitGlobalPointsAfterMatch(data) {
+      try {
+        const token = localStorage.getItem(AUTH_TOKEN_KEY);
+        if (!token || !API_BASE || !data || !data.scores) return;
+        const you = typeof data.youIndex === "number" ? data.youIndex : 0;
+        const pts = Math.min(1500, Math.max(0, Math.floor(Number(data.scores[you]) || 0)));
+        if (pts <= 0) return;
+        await fetch(`${API_BASE}/api/leaderboard/add-points`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ points: pts }),
+        });
+      } catch {
+        /* ignore */
+      }
+    }
 
     socket.on("mp:matchEnd", (data) => {
       mpSession.phase = "mpMatchEnd";
@@ -4028,6 +4345,13 @@
       updateTimerPill(null);
       hideEndOverlay();
       hideMpLayerOverlays();
+      syncMpChatDock();
+      void submitGlobalPointsAfterMatch(data);
+      if (elMpRematchBtn) {
+        elMpRematchBtn.textContent = "Rematch (0/2)";
+        elMpRematchBtn.classList.remove("mpRematchConfirmed");
+      }
+      mpSession.rematchSelfConfirmed = false;
       elRestartBtn.disabled = true;
       elBuildBtn.classList.add("primary");
       elPlayBtn.classList.remove("primary");
@@ -4131,18 +4455,37 @@
         mpSession.phase = "mpSpectate";
         if (elMpSubmitLevelBtn) elMpSubmitLevelBtn.classList.add("hidden");
         if (elMpBuildHint) elMpBuildHint.classList.add("hidden");
-        if (elMpSpectateTitle) elMpSpectateTitle.textContent = "Sent";
-        if (elMpSpectateBody) elMpSpectateBody.textContent = "Waiting for them to finish…";
         hideMpLayerOverlays();
-        if (elMpSpectate) elMpSpectate.classList.remove("hidden");
         elBuildBtn.disabled = true;
         elPlayBtn.disabled = true;
-        showToast("Level sent to opponent.");
+        syncMpChatDock();
+        showToast("Level sent — you’ll spectate their run.");
       });
     }
+    function sendMpChat() {
+      if (!mpSession.socket || !elMpChatInput) return;
+      const t = elMpChatInput.value.trim();
+      if (!t) return;
+      mpSession.socket.emit("mp:chat", { text: t });
+      elMpChatInput.value = "";
+    }
+    if (elMpChatSend) elMpChatSend.addEventListener("click", () => sendMpChat());
+    if (elMpChatInput) {
+      elMpChatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sendMpChat();
+        }
+      });
+    }
+
     if (elMpRematchBtn) {
       elMpRematchBtn.addEventListener("click", () => {
-        if (mpSession.socket) mpSession.socket.emit("mp:rematch", { accept: true });
+        if (mpSession.socket) {
+          mpSession.socket.emit("mp:rematch", { accept: true });
+          mpSession.rematchSelfConfirmed = true;
+          elMpRematchBtn.classList.add("mpRematchConfirmed");
+        }
       });
     }
     function mpDeclineRematchAndMenu() {
@@ -4163,6 +4506,85 @@
       elMpMatchEndCloseBtn.addEventListener("click", () => mpDeclineRematchAndMenu());
     }
   }
+
+  function openAuthModal(view = "login") {
+    if (!elAuthModal) return;
+    if (elAuthBackdrop) elAuthBackdrop.classList.remove("hidden");
+    elAuthModal.classList.remove("hidden");
+    if (elAuthFormLogin) elAuthFormLogin.classList.toggle("hidden", view !== "login");
+    if (elAuthFormRegister) elAuthFormRegister.classList.toggle("hidden", view !== "register");
+    if (elAuthModalTitle) elAuthModalTitle.textContent = view === "register" ? "Create account" : "Sign in";
+    if (elAuthStatus) elAuthStatus.textContent = "";
+  }
+
+  function closeAuthModal() {
+    if (elAuthModal) elAuthModal.classList.add("hidden");
+    if (elAuthBackdrop) elAuthBackdrop.classList.add("hidden");
+  }
+
+  function initAuthUi() {
+    if (elAuthAccountBtn) {
+      elAuthAccountBtn.addEventListener("click", () => openAuthModal("login"));
+    }
+    if (elAuthModalCloseBtn) elAuthModalCloseBtn.addEventListener("click", () => closeAuthModal());
+    if (elAuthBackdrop) elAuthBackdrop.addEventListener("click", () => closeAuthModal());
+    if (elAuthShowRegisterBtn) elAuthShowRegisterBtn.addEventListener("click", () => openAuthModal("register"));
+    if (elAuthShowLoginBtn) elAuthShowLoginBtn.addEventListener("click", () => openAuthModal("login"));
+
+    async function postAuth(path, body) {
+      if (!API_BASE) {
+        if (elAuthStatus) elAuthStatus.textContent = "Set multiplayer-config.js to your server URL.";
+        return;
+      }
+      const r = await fetch(`${API_BASE}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return r.json();
+    }
+
+    if (elAuthLoginBtn) {
+      elAuthLoginBtn.addEventListener("click", async () => {
+        const u = elAuthLoginUser && elAuthLoginUser.value.trim();
+        const p = elAuthLoginPass && elAuthLoginPass.value;
+        if (!u || !p) {
+          if (elAuthStatus) elAuthStatus.textContent = "Enter username and password.";
+          return;
+        }
+        const j = await postAuth("/api/auth/login", { username: u, password: p });
+        if (j && j.ok && j.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, j.token);
+          if (elAuthStatus) elAuthStatus.textContent = `Signed in as ${j.username}`;
+          closeAuthModal();
+          showToast("Signed in — global leaderboard will sync.", 2400);
+        } else {
+          if (elAuthStatus) elAuthStatus.textContent = (j && j.error) || "Login failed";
+        }
+      });
+    }
+    if (elAuthRegisterBtn) {
+      elAuthRegisterBtn.addEventListener("click", async () => {
+        const u = elAuthRegUser && elAuthRegUser.value.trim();
+        const p = elAuthRegPass && elAuthRegPass.value;
+        if (!u || !p) {
+          if (elAuthStatus) elAuthStatus.textContent = "Enter username and password.";
+          return;
+        }
+        const j = await postAuth("/api/auth/register", { username: u, password: p });
+        if (j && j.ok && j.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, j.token);
+          if (elAuthStatus) elAuthStatus.textContent = "Account created.";
+          closeAuthModal();
+          showToast("Registered — you’re signed in.", 2400);
+        } else {
+          if (elAuthStatus) elAuthStatus.textContent = (j && j.error) || "Registration failed";
+        }
+      });
+    }
+  }
+
+  initAuthUi();
 
   // ---------- Game loop ----------
   let lastFrame = performance.now();
@@ -4198,6 +4620,7 @@
         !mpSession.active ||
         (mpSession.phase !== "mpWaitBuild" &&
           mpSession.phase !== "mpSpectate" &&
+          mpSession.phase !== "mpSpectatePlay" &&
           mpSession.phase !== "mpMatchEnd")
       ) {
         setMode("play");

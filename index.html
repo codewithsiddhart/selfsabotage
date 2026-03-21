@@ -45,10 +45,12 @@
     <!-- Exit to menu (top-left, play + build) -->
     <button id="exitToMenuBtn" class="exitToMenuBtn hidden" type="button" aria-label="Exit to menu">✕ Menu</button>
 
-    <!-- Rotate device (mobile play only) -->
+    <!-- Rotate device (mobile play + build) -->
     <div id="rotateOverlay" class="rotateOverlay hidden" aria-hidden="true">
-      <div class="rotateMessage">Rotate your device for best experience</div>
+      <div class="rotateMessage" id="rotateOverlayMessage">Rotate your device to landscape</div>
     </div>
+
+    <button type="button" id="mobileExitBuildBtn" class="mobileExitBuildBtn hidden" aria-label="Exit build mode">Exit build</button>
 
     <div class="app">
       <header class="topbar">
@@ -58,6 +60,7 @@
         </div>
 
         <div class="topActions">
+          <button type="button" id="authAccountBtn" class="btn subtle" title="Account">Account</button>
           <div class="profileChip" id="profileChip" role="button" tabindex="0" aria-label="Open player profile">
             <div class="dot"></div>
             <div class="stack">
@@ -274,17 +277,25 @@
     </div>
 
     <!-- Leaderboard Modal -->
-    <div id="leaderboardModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Local leaderboard">
+    <div id="leaderboardModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Leaderboard">
       <div class="modalHeader">
-        <div class="modalTitle">Leaderboard (Local)</div>
+        <div class="modalTitle">Leaderboard</div>
         <button id="closeLeaderboardModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
       </div>
       <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Global (signed-in accounts)</div>
+          <p class="smallNote" id="globalLbHint">Sign in via Account to sync scores. Data from server.</p>
+          <div id="globalLeaderboardList" class="list" aria-label="Global leaderboard"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Local (this browser)</div>
         <div class="row">
           <input id="leaderboardSearchInput" class="input" placeholder="Search player…" autocomplete="off" />
           <button id="leaderboardSearchBtn" class="btn" type="button">Search</button>
         </div>
         <div id="leaderboardList" class="list" aria-label="Leaderboard list"></div>
+        </div>
       </div>
     </div>
 
@@ -425,10 +436,45 @@
         </div>
         <div id="mpMatchEndScores" class="mpMatchEndScores"></div>
         <div class="mpRematchRow">
-          <button id="mpRematchBtn" class="btn primary" type="button">Rematch</button>
+          <button id="mpRematchBtn" class="btn primary" type="button">Rematch (0/2)</button>
           <button id="mpDeclineRematchBtn" class="btn" type="button">Menu</button>
         </div>
         <p class="mpOverlayFoot">Both choose Rematch to play again.</p>
+      </div>
+    </div>
+
+    <div id="mpChatDock" class="mpChatDock hidden" aria-label="Match chat">
+      <div id="mpChatMessages" class="mpChatMessages"></div>
+      <div class="mpChatInputRow">
+        <input id="mpChatInput" class="mpChatInput" type="text" maxlength="200" placeholder="Message…" autocomplete="off" />
+        <button type="button" id="mpChatSend" class="btn primary mpChatSend">Send</button>
+      </div>
+    </div>
+
+    <div id="authBackdrop" class="backdrop hidden" aria-hidden="true"></div>
+    <div id="authModal" class="modal authModal hidden" role="dialog" aria-modal="true" aria-label="Account">
+      <div class="modalHeader">
+        <div class="modalTitle" id="authModalTitle">Sign in</div>
+        <button type="button" class="iconBtn" id="authModalCloseBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div id="authFormLogin" class="authForm">
+          <label class="authLabel"><span class="authIcon" aria-hidden="true">👤</span> Username</label>
+          <input id="authLoginUser" class="input" type="text" autocomplete="username" maxlength="32" />
+          <label class="authLabel"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
+          <input id="authLoginPass" class="input" type="password" autocomplete="current-password" maxlength="128" />
+          <button type="button" class="btn primary authSubmitBtn" id="authLoginBtn">Sign in</button>
+          <button type="button" class="btn linkish" id="authShowRegisterBtn">Create account</button>
+        </div>
+        <div id="authFormRegister" class="authForm hidden">
+          <label class="authLabel"><span class="authIcon" aria-hidden="true">👤</span> Username</label>
+          <input id="authRegUser" class="input" type="text" autocomplete="username" maxlength="32" />
+          <label class="authLabel"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
+          <input id="authRegPass" class="input" type="password" autocomplete="new-password" maxlength="128" />
+          <button type="button" class="btn primary authSubmitBtn" id="authRegisterBtn">Register</button>
+          <button type="button" class="btn linkish" id="authShowLoginBtn">Back to sign in</button>
+        </div>
+        <p id="authStatus" class="authStatus" role="status"></p>
       </div>
     </div>
 

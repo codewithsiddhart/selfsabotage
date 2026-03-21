@@ -35,7 +35,8 @@ Skip this if you only want multiplayer **without** saved leaderboards in the clo
 
 1. Go to [supabase.com](https://supabase.com) → sign up → **New project** (wait until it finishes creating).
 2. Open **SQL Editor** → **New query** → paste everything from `server/db/schema.sql` in this repo → **Run**.
-  (“Success. No rows returned” is expected; keys and URL come from the next step, not from this query.)
+  (“Success. No rows returned” is expected; keys and URL come from the next step, not from this query.)  
+  The schema includes tables for match history, optional per-level leaderboards, **account auth** (`auth_users`), and **global synced stats** (`global_player_stats`). If you already ran an older schema, run any new statements from the file you are missing (e.g. the `auth_users` / `global_player_stats` blocks).
 3. Open **Project Settings** (gear) → **API**:
   - Copy **Project URL** → you will put this in Render as `SUPABASE_URL`.
   - Copy the **service_role** key → put it in Render as `SUPABASE_SERVICE_ROLE_KEY` only.
@@ -70,6 +71,7 @@ Skip this if you only want multiplayer **without** saved leaderboards in the clo
 | `CORS_ORIGIN`               | Your **Vercel** URL + all previews: e.g. `https://something.vercel.app,*.vercel.app` (comma, **no spaces**). The `*.vercel.app` entry allows Vercel preview URLs like `something-git-main-xxx.vercel.app`. |
 | `SUPABASE_URL`              | From Supabase API settings (if you did Step B)                                                                                                                                                                         |
 | `SUPABASE_SERVICE_ROLE_KEY` | From Supabase **service_role** (if you did Step B)                                                                                                                                                                     |
+| `JWT_SECRET`                | Long random string for login tokens and **global leaderboard** score updates. Required in production for secure auth.                                                                                                      |
 
 
 1. **Create Web Service** and wait until status is **Live**.
@@ -251,7 +253,9 @@ Copy `.env.example` to `.env` for local development. On **Render**, set the same
 
 **Security:** Use the **service role** key only on the backend. Do **not** ship it to Vercel client bundles. Real-time gameplay does not query the DB; only match completion writes data.
 
-If Supabase is not configured, the server still runs; `/api/leaderboard` returns `{ leaderboard: [], db: false }`.
+If Supabase is not configured, the server still runs; `/api/leaderboard` returns `{ leaderboard: [], db: false }`, and global auth/leaderboard endpoints respond with empty data or `503` where appropriate.
+
+**Accounts & synced leaderboard (optional):** With Supabase + `JWT_SECRET`, the game can use **Account** in the UI: `POST /api/auth/register`, `POST /api/auth/login` (returns a JWT), `GET /api/leaderboard/global`, and `POST /api/leaderboard/add-points` (Bearer token) for cross-device points. Match end still works without login; points sync only when the player is signed in.
 
 ---
 
@@ -264,7 +268,9 @@ npm start
 
 - Default port: `3000` (or `PORT` from env).
 - Health check: `GET http://localhost:3000/health`
-- Leaderboard: `GET http://localhost:3000/api/leaderboard?limit=50`
+- Leaderboard (level-based, Supabase): `GET http://localhost:3000/api/leaderboard?limit=50`
+- Global leaderboard: `GET http://localhost:3000/api/leaderboard/global?limit=50`
+- Auth: `POST http://localhost:3000/api/auth/register` / `POST http://localhost:3000/api/auth/login` (JSON body: `username`, `password`)
 
 Entry points:
 
@@ -315,7 +321,8 @@ Connect with optional query: `displayName`, `clientPublicId` (UUID).
 - **Build mode** — Place tiles; sabotage profiles stay hidden until play.
 - **Play mode** — Reach the goal while sabotage, hazards, and timing matter.
 - **Local profiles + leaderboard** — Per-browser saves and rankings.
-- **Multiplayer mode** — Legacy **2-player** queue (`mp:`*): alternating build/play rounds, shared finale, rematch. See earlier sections for the new **room** system.
+- **Account + global leaderboard** — Optional login; server-stored points sync across devices when Supabase and `JWT_SECRET` are configured.
+- **Multiplayer mode** — Legacy **2-player** queue (`mp:`*): five-round structure (alternating build/play, then shared hard finale), rematch with two confirmations, in-match chat, spectate on opponent runs only. See earlier sections for the new **room** system.
 
 ---
 
