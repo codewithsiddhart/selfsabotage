@@ -98,7 +98,6 @@
   const elDebugOverlayToggle = /** @type {HTMLInputElement | null} */ ($("debugOverlayToggle"));
   const elAmbientNoiseSelect = /** @type {HTMLSelectElement | null} */ ($("ambientNoiseSelect"));
   const elExitToMenuBtn = /** @type {HTMLButtonElement} */ ($("exitToMenuBtn"));
-  const elRotateOverlay = $("rotateOverlay");
   const elTimerPill = $("timerPill");
 
   const elMultiplayerBtn = /** @type {HTMLButtonElement | null} */ ($("multiplayerBtn"));
@@ -122,9 +121,12 @@
   const elMpHudRound = $("mpHudRound");
   const elMpHudRole = $("mpHudRole");
   const elMpHudScore = $("mpHudScore");
-  const elRotateOverlayMessage = $("rotateOverlayMessage");
   const elMobileExitBuildBtn = /** @type {HTMLButtonElement | null} */ ($("mobileExitBuildBtn"));
   const elMpChatDock = $("mpChatDock");
+  const elMpChatExpanded = $("mpChatExpanded");
+  const elMpChatPeekBar = $("mpChatPeekBar");
+  const elMpChatCollapseBtn = /** @type {HTMLButtonElement | null} */ ($("mpChatCollapseBtn"));
+  const elMpChatExpandBtn = /** @type {HTMLButtonElement | null} */ ($("mpChatExpandBtn"));
   const elMpChatMessages = $("mpChatMessages");
   const elMpChatInput = /** @type {HTMLInputElement | null} */ ($("mpChatInput"));
   const elMpChatSend = /** @type {HTMLButtonElement | null} */ ($("mpChatSend"));
@@ -268,6 +270,14 @@
   // ---------- Storage ----------
   const SAVE_KEY = "SSB_SAVE_V2";
   const DEVICE_KEY = "SSB_DEVICE";
+
+  /** After device picker, closing auth should open start modal if still no player. */
+  let authCloseOpensStart = false;
+
+  /** Multiplayer chat: user minimized panel (still show gray peek / +). */
+  let mpChatUserCollapsed = false;
+  /** Desktop: hover temporarily expands peek while collapsed. */
+  let mpChatPeekHover = false;
 
   /**
    * @typedef {Object} SavedLevel
@@ -1038,33 +1048,22 @@
     deviceMode = m;
     localStorage.setItem(DEVICE_KEY, m);
     if (elDeviceModal) elDeviceModal.classList.add("hidden");
+    document.documentElement.classList.toggle("device-touch-mode", m === "mobile");
     syncTouchControlsVisibility();
     syncExitAndRotateUI();
-    if (!activePlayer) openStartModal();
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) {
+      authCloseOpensStart = true;
+      openAuthModal("login");
+    } else if (!activePlayer) {
+      openStartModal();
+    }
   }
 
   function syncExitAndRotateUI() {
     if (elExitToMenuBtn) {
       if (deviceMode) elExitToMenuBtn.classList.remove("hidden");
       else elExitToMenuBtn.classList.add("hidden");
-    }
-    const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth;
-    if (elRotateOverlay) {
-      const needLandscape =
-        deviceMode === "mobile" &&
-        portrait &&
-        ((mode === "play" && play && !play.ended) || mode === "build");
-      if (elRotateOverlayMessage) {
-        elRotateOverlayMessage.textContent =
-          mode === "build" ? "Rotate device to landscape (build mode)" : "Rotate device to landscape";
-      }
-      if (needLandscape) {
-        elRotateOverlay.classList.remove("hidden");
-        elRotateOverlay.setAttribute("aria-hidden", "false");
-      } else {
-        elRotateOverlay.classList.add("hidden");
-        elRotateOverlay.setAttribute("aria-hidden", "true");
-      }
     }
     if (elMobileExitBuildBtn) {
       const showExit = deviceMode === "mobile" && mode === "build";
@@ -1105,8 +1104,10 @@
     if (elMpMatchEnd) elMpMatchEnd.classList.add("hidden");
     if (elMpSubmitLevelBtn) elMpSubmitLevelBtn.classList.add("hidden");
     if (elMpBuildHint) elMpBuildHint.classList.add("hidden");
-    if (elMpChatDock) elMpChatDock.classList.add("hidden");
     if (elMpChatMessages) elMpChatMessages.innerHTML = "";
+    mpChatUserCollapsed = false;
+    mpChatPeekHover = false;
+    syncMpChatPanel();
     if (elMpRematchBtn) {
       elMpRematchBtn.textContent = "Rematch (0/2)";
       elMpRematchBtn.classList.remove("mpRematchConfirmed");
@@ -1117,6 +1118,10 @@
   }
 
   function syncMpChatDock() {
+    syncMpChatPanel();
+  }
+
+  function syncMpChatPanel() {
     if (!elMpChatDock) return;
     const on =
       mpSession.active &&
@@ -1124,7 +1129,14 @@
       mpSession.phase !== "off" &&
       mpSession.phase !== "queue" &&
       mpSession.phase !== "mpMatchEnd";
-    elMpChatDock.classList.toggle("hidden", !on);
+    if (!on) {
+      elMpChatDock.classList.add("hidden");
+      return;
+    }
+    elMpChatDock.classList.remove("hidden");
+    const expanded = !mpChatUserCollapsed || mpChatPeekHover;
+    if (elMpChatExpanded) elMpChatExpanded.classList.toggle("hidden", !expanded);
+    if (elMpChatPeekBar) elMpChatPeekBar.classList.toggle("hidden", expanded);
   }
 
   function appendMpChatLine(msg) {
@@ -3041,8 +3053,8 @@
       return;
     }
 
-    // Hammer: one per level, spawn after delay
-    if (play.sourceLevelId && !play.hammer && play.now - play.t0 > 6000) {
+    // Hammer: single-player built-in levels only (not mp_vs / online — was killing runners after ~6s)
+    if (!mpSession.active && play.sourceBuiltinIndex != null && !play.hammer && play.now - play.t0 > 6000) {
       const p = play.player;
       const offsetX = (Math.random() * 2 - 1) * 80;
       play.hammer = { x: p.x + offsetX, y: -30, vy: 420, active: true };
@@ -3296,10 +3308,9 @@
       tile.padCooldownMs = 120;
       const sab = tile.sab.pad;
       if (sab.type === "delayed") {
-        // Trigger a delayed impulse by scheduling on the tile itself.
+        const runT0 = state.t0;
         setTimeout(() => {
-          if (!play || play.ended) return;
-          // Only apply if player still exists; apply impulse regardless of position to feel "sticky" pad.
+          if (!play || play.ended || play.t0 !== runT0) return;
           play.player.vy = -PHYS.jumpV * sab.strength;
           AudioSys.sfx.pad();
         }, sab.delayMs);
@@ -4132,7 +4143,7 @@
     closeModal(elStartModal);
 
     socket.on("connect", () => {
-      socket.emit("mp:queue");
+      if (mpSession.phase === "queue" && mpSession.socket === socket) socket.emit("mp:queue");
     });
 
     socket.on("connect_error", (err) => {
@@ -4478,6 +4489,38 @@
         }
       });
     }
+    if (elMpChatCollapseBtn) {
+      elMpChatCollapseBtn.addEventListener("click", () => {
+        mpChatUserCollapsed = true;
+        mpChatPeekHover = false;
+        syncMpChatPanel();
+      });
+    }
+    if (elMpChatExpandBtn) {
+      elMpChatExpandBtn.addEventListener("click", () => {
+        mpChatUserCollapsed = false;
+        mpChatPeekHover = false;
+        syncMpChatPanel();
+        if (elMpChatInput) elMpChatInput.focus();
+      });
+    }
+    if (elMpChatPeekBar) {
+      elMpChatPeekBar.addEventListener("mouseenter", () => {
+        if (!mpChatUserCollapsed) return;
+        if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return;
+        mpChatPeekHover = true;
+        syncMpChatPanel();
+        if (elMpChatInput) requestAnimationFrame(() => elMpChatInput.focus());
+      });
+    }
+    if (elMpChatDock) {
+      elMpChatDock.addEventListener("mouseleave", () => {
+        if (!mpChatUserCollapsed) return;
+        if (elMpChatInput && document.activeElement === elMpChatInput) return;
+        mpChatPeekHover = false;
+        syncMpChatPanel();
+      });
+    }
 
     if (elMpRematchBtn) {
       elMpRematchBtn.addEventListener("click", () => {
@@ -4520,6 +4563,29 @@
   function closeAuthModal() {
     if (elAuthModal) elAuthModal.classList.add("hidden");
     if (elAuthBackdrop) elAuthBackdrop.classList.add("hidden");
+    if (authCloseOpensStart && !activePlayer) {
+      authCloseOpensStart = false;
+      openStartModal();
+    } else {
+      authCloseOpensStart = false;
+    }
+  }
+
+  function formatAuthError(err) {
+    const key = String(err || "").toUpperCase();
+    const map = {
+      USERNAME_TAKEN: "That username is already taken.",
+      INVALID_INPUT: "Enter a valid username and password.",
+      PASSWORD_TOO_SHORT: "Password must be at least 4 characters.",
+      DATABASE_NOT_CONFIGURED: "Server database is not configured.",
+      INVALID_CREDENTIALS: "Wrong username or password.",
+      REGISTER_FAILED: "Could not register. If this persists, the database may be misconfigured.",
+      INSERT_FAILED: "Could not save the account (database error).",
+      DATABASE_POLICY: "Registration blocked by database security rules (check Supabase RLS on auth_users).",
+      NETWORK: "Network error — check URL and connection.",
+      BAD_RESPONSE: "Unexpected server response.",
+    };
+    return map[key] || (err ? String(err).replace(/_/g, " ") : "") || "Request failed";
   }
 
   function initAuthUi() {
@@ -4534,14 +4600,25 @@
     async function postAuth(path, body) {
       if (!API_BASE) {
         if (elAuthStatus) elAuthStatus.textContent = "Set multiplayer-config.js to your server URL.";
-        return;
+        return null;
       }
-      const r = await fetch(`${API_BASE}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      return r.json();
+      try {
+        const r = await fetch(`${API_BASE}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const text = await r.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          if (elAuthStatus) elAuthStatus.textContent = r.ok ? "Unexpected server response." : `Server error (${r.status}).`;
+          return { ok: false, error: "BAD_RESPONSE" };
+        }
+      } catch (e) {
+        if (elAuthStatus) elAuthStatus.textContent = "Network error — check URL and connection.";
+        return { ok: false, error: "NETWORK" };
+      }
     }
 
     if (elAuthLoginBtn) {
@@ -4553,13 +4630,14 @@
           return;
         }
         const j = await postAuth("/api/auth/login", { username: u, password: p });
+        if (j == null) return;
         if (j && j.ok && j.token) {
           localStorage.setItem(AUTH_TOKEN_KEY, j.token);
           if (elAuthStatus) elAuthStatus.textContent = `Signed in as ${j.username}`;
           closeAuthModal();
           showToast("Signed in — global leaderboard will sync.", 2400);
         } else {
-          if (elAuthStatus) elAuthStatus.textContent = (j && j.error) || "Login failed";
+          if (elAuthStatus) elAuthStatus.textContent = formatAuthError(j && j.error);
         }
       });
     }
@@ -4572,13 +4650,14 @@
           return;
         }
         const j = await postAuth("/api/auth/register", { username: u, password: p });
+        if (j == null) return;
         if (j && j.ok && j.token) {
           localStorage.setItem(AUTH_TOKEN_KEY, j.token);
           if (elAuthStatus) elAuthStatus.textContent = "Account created.";
           closeAuthModal();
           showToast("Registered — you’re signed in.", 2400);
         } else {
-          if (elAuthStatus) elAuthStatus.textContent = (j && j.error) || "Registration failed";
+          if (elAuthStatus) elAuthStatus.textContent = formatAuthError(j && j.error);
         }
       });
     }
@@ -4646,6 +4725,7 @@
   if (!deviceMode && elDeviceModal) {
     elDeviceModal.classList.remove("hidden");
   } else {
+    document.documentElement.classList.toggle("device-touch-mode", deviceMode === "mobile");
     syncExitAndRotateUI();
     if (save.activePlayerId && save.players[save.activePlayerId]) setActivePlayer(save.activePlayerId);
     else openStartModal();

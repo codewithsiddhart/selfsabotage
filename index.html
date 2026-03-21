@@ -45,11 +45,6 @@
     <!-- Exit to menu (top-left, play + build) -->
     <button id="exitToMenuBtn" class="exitToMenuBtn hidden" type="button" aria-label="Exit to menu">✕ Menu</button>
 
-    <!-- Rotate device (mobile play + build) -->
-    <div id="rotateOverlay" class="rotateOverlay hidden" aria-hidden="true">
-      <div class="rotateMessage" id="rotateOverlayMessage">Rotate your device to landscape</div>
-    </div>
-
     <button type="button" id="mobileExitBuildBtn" class="mobileExitBuildBtn hidden" aria-label="Exit build mode">Exit build</button>
 
     <div class="app">
@@ -444,10 +439,20 @@
     </div>
 
     <div id="mpChatDock" class="mpChatDock hidden" aria-label="Match chat">
-      <div id="mpChatMessages" class="mpChatMessages"></div>
-      <div class="mpChatInputRow">
-        <input id="mpChatInput" class="mpChatInput" type="text" maxlength="200" placeholder="Message…" autocomplete="off" />
-        <button type="button" id="mpChatSend" class="btn primary mpChatSend">Send</button>
+      <div id="mpChatPeekBar" class="mpChatPeekBar hidden">
+        <span class="mpChatPeekHint">Match chat — hover to type (or tap +)</span>
+        <button type="button" id="mpChatExpandBtn" class="mpChatExpandPlus" aria-label="Open chat">+</button>
+      </div>
+      <div id="mpChatExpanded" class="mpChatExpanded">
+        <div class="mpChatHeaderRow">
+          <span class="mpChatTitle">Match chat</span>
+          <button type="button" id="mpChatCollapseBtn" class="mpChatIconBtn" aria-label="Minimize chat">✕</button>
+        </div>
+        <div id="mpChatMessages" class="mpChatMessages"></div>
+        <div class="mpChatInputRow">
+          <input id="mpChatInput" class="mpChatInput" type="text" maxlength="200" placeholder="Message…" autocomplete="off" />
+          <button type="button" id="mpChatSend" class="btn primary mpChatSend">Send</button>
+        </div>
       </div>
     </div>
 

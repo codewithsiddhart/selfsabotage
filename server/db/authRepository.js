@@ -14,6 +14,11 @@ async function createAuthUser(username, passwordHash) {
   const { data, error } = await sb.from("auth_users").insert({ username, password_hash: passwordHash }).select("id, username").single();
   if (error) {
     if (String(error.message || "").includes("duplicate") || error.code === "23505") return { ok: false, error: "USERNAME_TAKEN" };
+    const msg = String(error.message || "");
+    if (msg.toLowerCase().includes("row-level security") || error.code === "42501") {
+      console.error("createAuthUser RLS/policy", error);
+      return { ok: false, error: "DATABASE_POLICY" };
+    }
     console.error("createAuthUser", error);
     return { ok: false, error: "INSERT_FAILED" };
   }
