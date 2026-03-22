@@ -14,7 +14,12 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div id="mobileLandscapeHint" class="mobileLandscapeHint hidden" role="status">Landscape works best for building — rotate your device.</div>
+    <div id="mobilePortraitLock" class="mobilePortraitLock hidden" role="dialog" aria-modal="true" aria-live="polite" aria-label="Rotate device">
+      <div class="mobilePortraitLockInner">
+        <p class="mobilePortraitLockTitle">Rotate your device to landscape</p>
+        <p class="mobilePortraitLockSub">Build and play require landscape orientation.</p>
+      </div>
+    </div>
     <!-- Device mode: show on first visit -->
     <div id="deviceModal" class="modal deviceModal hidden" role="dialog" aria-label="Choose your device">
       <div class="modalHeader">
@@ -36,15 +41,56 @@
       </div>
     </div>
 
-    <!-- Touch controls (visible only in mobile mode when playing) -->
-    <div id="touchControls" class="touchControls hidden" aria-hidden="true">
-      <button id="touchLeft" class="touchBtn touchLeft" type="button" aria-label="Move left">←</button>
-      <button id="touchRight" class="touchBtn touchRight" type="button" aria-label="Move right">→</button>
-      <button id="touchJump" class="touchBtn touchJump" type="button" aria-label="Jump">↑</button>
+    <!-- After device: sign in, register, or play without account -->
+    <div id="loginGateBackdrop" class="loginGateBackdrop hidden" aria-hidden="true"></div>
+    <div id="loginGateModal" class="loginGateModal hidden" role="dialog" aria-modal="true" aria-labelledby="loginGateTitle">
+      <div class="loginGateCard">
+        <h2 id="loginGateTitle" class="loginGateHeading">LOGIN</h2>
+        <form id="gateLoginForm" class="loginGateForm" action="#" method="post" autocomplete="on">
+          <label class="loginGateFieldLabel" for="gateUser">User</label>
+          <div class="loginGateInputLine">
+            <input id="gateUser" class="loginGateInput" name="username" type="text" inputmode="text" autocomplete="username" maxlength="32" required />
+            <span class="loginGateInputIcon" aria-hidden="true">✉</span>
+          </div>
+          <label class="loginGateFieldLabel" for="gatePass">Password</label>
+          <div class="loginGateInputLine">
+            <input id="gatePass" class="loginGateInput" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+            <button type="button" class="loginGateInputIconBtn" id="gatePassToggle" aria-label="Show password" title="Show password">👁</button>
+          </div>
+          <div class="loginGateRow">
+            <label class="loginGateRemember">
+              <input id="gateRemember" type="checkbox" checked />
+              <span>Remember me</span>
+            </label>
+            <button type="button" class="loginGateLink" id="gateForgotBtn">Forgot password?</button>
+          </div>
+          <button type="submit" class="loginGateSubmit" id="gateLoginBtn">Login</button>
+        </form>
+        <form id="gateRegisterForm" class="loginGateForm hidden" action="#" method="post" autocomplete="on">
+          <label class="loginGateFieldLabel" for="gateRegUser">User</label>
+          <div class="loginGateInputLine">
+            <input id="gateRegUser" class="loginGateInput" type="text" inputmode="text" autocomplete="username" maxlength="32" required />
+          </div>
+          <label class="loginGateFieldLabel" for="gateRegPass">Password</label>
+          <div class="loginGateInputLine">
+            <input id="gateRegPass" class="loginGateInput" type="password" autocomplete="new-password" maxlength="128" required />
+          </div>
+          <button type="submit" class="loginGateSubmit" id="gateRegisterBtn">Create account</button>
+          <button type="button" class="loginGateLink loginGateLinkBlock" id="gateBackToLoginBtn">Back to login</button>
+        </form>
+        <p id="gateStatus" class="gateStatus" role="status"></p>
+        <button type="button" class="loginGatePlayLocal" id="gatePlayLocalBtn">Play locally</button>
+        <p class="loginGateFoot">No account needed · Multiplayer disabled until you sign in.</p>
+        <p class="loginGateRegisterPrompt">
+          Don’t have an account?
+          <button type="button" class="loginGateLink loginGateLinkInline" id="gateShowRegisterBtn"><strong>Register</strong></button>
+        </p>
+      </div>
     </div>
 
-    <!-- Exit to menu (top-left, play + build) -->
+    <!-- Exit to menu (fixed; top-right in mobile session — see CSS) -->
     <button id="exitToMenuBtn" class="exitToMenuBtn hidden" type="button" aria-label="Exit to menu">✕ Menu</button>
+    <button type="button" id="mobileMpChatFab" class="mobileMpChatFab hidden" aria-label="Match chat">💬</button>
 
     <button type="button" id="mobileExitBuildBtn" class="mobileExitBuildBtn hidden" aria-label="Exit build mode">Exit build</button>
 
@@ -86,6 +132,11 @@
 
           <div id="palette" class="palette" aria-label="Tile palette"></div>
 
+          <div id="mobileBuildToolsRow" class="mobileBuildToolsRow" aria-label="Build tools">
+            <button type="button" id="touchEraserBtn" class="touchToolBtn" aria-label="Eraser">Erase</button>
+            <button type="button" id="touchClearGridBtn" class="touchToolBtn touchToolDanger" aria-label="Clear entire grid">Clear grid</button>
+          </div>
+
           <div class="miniStats">
             <div class="stat">
               <div class="k">Difficulty</div>
@@ -121,6 +172,8 @@
           </div>
         </aside>
 
+        <div class="mobileSplitDivider" aria-hidden="true"></div>
+
         <section class="stageWrap">
           <div class="hud">
             <div id="statusPill" class="pill">Loading…</div>
@@ -132,12 +185,25 @@
               </div>
               <div id="mpHudScore" class="mpHudScore">You 0 · Opp 0</div>
             </div>
-            <div class="pill subtle">
+            <div class="pill subtle" id="runHintPill">
               <span id="runHint">Build carefully.</span>
             </div>
           </div>
 
           <canvas id="game" width="960" height="576" aria-label="Game canvas"></canvas>
+
+          <div id="mobilePlayDock" class="mobilePlayDock mobilePlayDock--float hidden" aria-hidden="true">
+            <div class="mobileMoveCluster">
+              <button type="button" id="touchLeft" class="touchBtn touchBig" aria-label="Move left">←</button>
+              <button type="button" id="touchRight" class="touchBtn touchBig" aria-label="Move right">→</button>
+            </div>
+            <div class="mobileActionCluster">
+              <button type="button" id="touchJump" class="touchBtn touchBig" aria-label="Jump">↑</button>
+              <button type="button" id="touchRestartBtn" class="touchBtn touchBig touchBtnSecondary" aria-label="Restart run">↻</button>
+              <button type="button" id="touchModeToggleBtn" class="touchBtn touchBtnMode" aria-label="Toggle build mode">Build</button>
+            </div>
+          </div>
+
           <div id="endOverlay" class="endOverlay hidden" aria-hidden="true">
             <div class="endOverlayContent">
               <div id="endOverlayMessage" class="endOverlayMessage"></div>
@@ -161,14 +227,12 @@
         <div class="copyright">© 2026 NeuroGlitch. All Rights Reserved. Self-Sabotage Builder by NeuroGlitch
         </div>
        
-        <div class="copyright"><h2>You can contact the founders through email or discord : </h2>
-          <b>
-             <h2>
-          1:Siddharth[zestyclosee1@proton.me,perfect_humann]<br>
-          2:Harshit[discord:mehuman123]
-          </h2>
-          </b>
-          
+        <div class="copyright footerContact">
+          <p class="footerContactTitle">Contact founders</p>
+          <p class="footerContactLines">
+            Siddharth — zestyclosee1@proton.me, Discord: perfect_humann<br />
+            Harshit — Discord: mehuman123
+          </p>
         </div>
       </footer>
     </div>

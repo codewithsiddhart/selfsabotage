@@ -88,10 +88,14 @@
   const elDeviceModal = $("deviceModal");
   const elDeviceDesktopBtn = /** @type {HTMLButtonElement} */ ($("deviceDesktopBtn"));
   const elDeviceMobileBtn = /** @type {HTMLButtonElement} */ ($("deviceMobileBtn"));
-  const elTouchControls = $("touchControls");
+  const elMobilePlayDock = $("mobilePlayDock");
   const elTouchLeft = /** @type {HTMLButtonElement} */ ($("touchLeft"));
   const elTouchRight = /** @type {HTMLButtonElement} */ ($("touchRight"));
   const elTouchJump = /** @type {HTMLButtonElement} */ ($("touchJump"));
+  const elTouchRestartBtn = /** @type {HTMLButtonElement | null} */ ($("touchRestartBtn"));
+  const elTouchModeToggleBtn = /** @type {HTMLButtonElement | null} */ ($("touchModeToggleBtn"));
+  const elTouchEraserBtn = /** @type {HTMLButtonElement | null} */ ($("touchEraserBtn"));
+  const elTouchClearGridBtn = /** @type {HTMLButtonElement | null} */ ($("touchClearGridBtn"));
   const elThemeSelect = /** @type {HTMLSelectElement} */ ($("themeSelect"));
   const elVolumeSlider = /** @type {HTMLInputElement} */ ($("volumeSlider"));
   const elVolumeValue = $("volumeValue");
@@ -147,9 +151,49 @@
   const elAuthStatus = $("authStatus");
   const elGlobalLeaderboardList = $("globalLeaderboardList");
   const elGlobalLbHint = $("globalLbHint");
-  const elMobileLandscapeHint = $("mobileLandscapeHint");
+  const elMobilePortraitLock = $("mobilePortraitLock");
+  const elLoginGateBackdrop = $("loginGateBackdrop");
+  const elLoginGateModal = $("loginGateModal");
+  const elGateStatus = $("gateStatus");
+  const elMobileMpChatFab = /** @type {HTMLButtonElement | null} */ ($("mobileMpChatFab"));
 
   const AUTH_TOKEN_KEY = "ssb_auth_token_v1";
+  const LOCAL_ONLY_KEY = "ssb_local_only_v1";
+
+  function getAuthToken() {
+    try {
+      return sessionStorage.getItem(AUTH_TOKEN_KEY) || localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  function setAuthToken(token, persistToLocal) {
+    try {
+      sessionStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      if (!token) return;
+      if (persistToLocal) localStorage.setItem(AUTH_TOKEN_KEY, token);
+      else sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function hasPassedLoginGate() {
+    return !!getAuthToken() || localStorage.getItem(LOCAL_ONLY_KEY) === "1";
+  }
+
+  function isMultiplayerBlockedLocalOnly() {
+    return localStorage.getItem(LOCAL_ONLY_KEY) === "1" && !getAuthToken();
+  }
+
+  function syncLocalOnlyMultiplayerUi() {
+    if (!elMultiplayerBtn) return;
+    const blocked = isMultiplayerBlockedLocalOnly();
+    elMultiplayerBtn.disabled = blocked;
+    elMultiplayerBtn.title = blocked ? "Sign in with an account to use online multiplayer." : "";
+  }
 
   /** REST API origin. Same host as the current page → "" (relative /api/…, no CORS). Else full origin from config. */
   function getApiBase() {
@@ -1073,6 +1117,29 @@
   /** Prior frame touch jump (for edge-triggered jump buffer, same as keyboard). */
   let touchJumpPrevDown = false;
 
+  function proceedAfterLoginGate() {
+    closeLoginGateModal();
+    syncExitAndRotateUI();
+    syncLocalOnlyMultiplayerUi();
+    if (save.activePlayerId && save.players[save.activePlayerId]) setActivePlayer(save.activePlayerId);
+    else openStartModal();
+  }
+
+  function openLoginGateModal() {
+    if (elGateStatus) elGateStatus.textContent = "";
+    const gl = document.getElementById("gateLoginForm");
+    const gr = document.getElementById("gateRegisterForm");
+    if (gr) gr.classList.add("hidden");
+    if (gl) gl.classList.remove("hidden");
+    if (elLoginGateBackdrop) elLoginGateBackdrop.classList.remove("hidden");
+    if (elLoginGateModal) elLoginGateModal.classList.remove("hidden");
+  }
+
+  function closeLoginGateModal() {
+    if (elLoginGateBackdrop) elLoginGateBackdrop.classList.add("hidden");
+    if (elLoginGateModal) elLoginGateModal.classList.add("hidden");
+  }
+
   function setDeviceMode(m) {
     deviceMode = m;
     localStorage.setItem(DEVICE_KEY, m);
@@ -1080,13 +1147,11 @@
     document.documentElement.classList.toggle("device-touch-mode", m === "mobile");
     syncTouchControlsVisibility();
     syncExitAndRotateUI();
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    if (!token && getApiBase()) {
-      authCloseOpensStart = true;
-      openAuthModal("login");
-    } else if (!activePlayer) {
-      openStartModal();
+    if (!hasPassedLoginGate()) {
+      openLoginGateModal();
+      return;
     }
+    proceedAfterLoginGate();
   }
 
   function syncExitAndRotateUI() {
@@ -1095,32 +1160,49 @@
       else elExitToMenuBtn.classList.add("hidden");
     }
     if (elMobileExitBuildBtn) {
-      const showExit = deviceMode === "mobile" && mode === "build";
-      elMobileExitBuildBtn.classList.toggle("hidden", !showExit);
+      elMobileExitBuildBtn.classList.add("hidden");
     }
+    const portrait =
+      typeof window.matchMedia === "function" && window.matchMedia("(orientation: portrait)").matches;
+
+    const mpRunFs =
+      mpSession.active && (mpSession.phase === "mpPlayOpponent" || mpSession.phase === "mpRound3");
+    const inPlaySession =
+      deviceMode === "mobile" &&
+      mode === "play" &&
+      play &&
+      !play.spectatorMode &&
+      (!play.ended || mpRunFs);
+    const inBuildSession = deviceMode === "mobile" && mode === "build";
+    const spectatorFull = deviceMode === "mobile" && mode === "play" && play && play.spectatorMode;
+
     const app = document.querySelector(".app");
     if (app) {
-      const mpRunFs =
-        mpSession.active && (mpSession.phase === "mpPlayOpponent" || mpSession.phase === "mpRound3");
-      const playFs =
-        deviceMode === "mobile" &&
-        mode === "play" &&
-        play &&
-        !play.spectatorMode &&
-        (!play.ended || mpRunFs);
-      app.classList.toggle("mobilePlayFullscreen", playFs);
-      app.classList.toggle("mobileBuild", deviceMode === "mobile" && mode === "build");
-      app.classList.toggle("mobileBuildFullscreen", deviceMode === "mobile" && mode === "build");
+      app.classList.toggle("mobile-session-layout", inPlaySession || inBuildSession);
+      app.classList.toggle("mobile-spectator-layout", !!spectatorFull);
+      if (inPlaySession || inBuildSession) {
+        app.dataset.mobileDock = mode === "build" ? "build" : "play";
+      } else {
+        delete app.dataset.mobileDock;
+      }
     }
-    if (elMobileLandscapeHint) {
-      const portrait =
-        typeof window.matchMedia === "function" && window.matchMedia("(orientation: portrait)").matches;
-      elMobileLandscapeHint.classList.toggle("hidden", !(deviceMode === "mobile" && mode === "build" && portrait));
+
+    if (elMobilePortraitLock) {
+      const blockPortrait =
+        deviceMode === "mobile" && portrait && (inBuildSession || inPlaySession || spectatorFull);
+      elMobilePortraitLock.classList.toggle("hidden", !blockPortrait);
     }
+
+    if (elTouchModeToggleBtn) {
+      elTouchModeToggleBtn.textContent = mode === "play" ? "Build" : "Play";
+      elTouchModeToggleBtn.setAttribute("aria-label", mode === "play" ? "Switch to build mode" : "Switch to play mode");
+    }
+    syncTouchControlsVisibility();
   }
 
   if (typeof window !== "undefined") {
     window.addEventListener("orientationchange", () => requestAnimationFrame(() => syncExitAndRotateUI()));
+    window.addEventListener("resize", () => requestAnimationFrame(() => syncExitAndRotateUI()));
   }
 
   function setMpChromeLocked(on) {
@@ -1176,12 +1258,16 @@
       mpSession.phase !== "mpMatchEnd";
     if (!on) {
       elMpChatDock.classList.add("hidden");
+      if (elMobileMpChatFab) elMobileMpChatFab.classList.add("hidden");
       return;
     }
     elMpChatDock.classList.remove("hidden");
     const expanded = !mpChatUserCollapsed || mpChatPeekHover;
     if (elMpChatExpanded) elMpChatExpanded.classList.toggle("hidden", !expanded);
     if (elMpChatPeekBar) elMpChatPeekBar.classList.toggle("hidden", expanded);
+    if (elMobileMpChatFab) {
+      elMobileMpChatFab.classList.toggle("hidden", !on || deviceMode !== "mobile");
+    }
   }
 
   function appendMpChatLine(msg) {
@@ -1234,13 +1320,16 @@
   }
 
   function syncTouchControlsVisibility() {
-    if (!elTouchControls) return;
+    if (!elMobilePlayDock) return;
     if (deviceMode === "mobile" && mode === "play" && play && !play.spectatorMode) {
-      elTouchControls.classList.remove("hidden");
-      elTouchControls.setAttribute("aria-hidden", "false");
+      elMobilePlayDock.classList.remove("hidden");
+      elMobilePlayDock.setAttribute("aria-hidden", "false");
     } else {
-      elTouchControls.classList.add("hidden");
-      elTouchControls.setAttribute("aria-hidden", "true");
+      elMobilePlayDock.classList.add("hidden");
+      elMobilePlayDock.setAttribute("aria-hidden", "true");
+    }
+    if (elTouchRestartBtn) {
+      elTouchRestartBtn.disabled = elRestartBtn.disabled;
     }
   }
 
@@ -2130,6 +2219,29 @@
   }
   function syncPaletteSelection() {
     for (const [t, btn] of tileButtons.entries()) btn.classList.toggle("selected", t === selectedTile);
+    if (elTouchEraserBtn) elTouchEraserBtn.classList.toggle("touchToolActive", selectedTile === Tile.empty);
+  }
+
+  if (elTouchRestartBtn) {
+    elTouchRestartBtn.addEventListener("click", () => {
+      if (!elRestartBtn.disabled) elRestartBtn.click();
+    });
+  }
+  if (elTouchModeToggleBtn) {
+    elTouchModeToggleBtn.addEventListener("click", () => {
+      if (mode === "play") setMode("build");
+      else setMode("play");
+    });
+  }
+  if (elTouchEraserBtn) {
+    elTouchEraserBtn.addEventListener("click", () => {
+      selectedTile = Tile.empty;
+      syncPaletteSelection();
+      showToast("Eraser — tap tiles to clear.");
+    });
+  }
+  if (elTouchClearGridBtn) {
+    elTouchClearGridBtn.addEventListener("click", () => elClearBtn.click());
   }
 
   // ---------- Level validation + difficulty ----------
@@ -4277,13 +4389,17 @@
       showToast("Use npm start so Socket.IO loads; multiplayer won't work from a raw file URL.");
       return;
     }
+    if (isMultiplayerBlockedLocalOnly()) {
+      showToast("Create an account to play online multiplayer.", 3600);
+      return;
+    }
     resetMultiplayerClientUi();
     const name = activePlayer ? activePlayer.name : "Guest";
     const mpBase =
       typeof window !== "undefined" && typeof window.MULTIPLAYER_SERVER_URL === "string"
         ? String(window.MULTIPLAYER_SERVER_URL).trim().replace(/\/$/, "")
         : "";
-    const authTok = localStorage.getItem(AUTH_TOKEN_KEY);
+    const authTok = getAuthToken();
     const socketOpts = {
       query: { name },
       transports: ["websocket", "polling"],
@@ -4494,7 +4610,7 @@
 
     async function submitGlobalPointsAfterMatch(data) {
       try {
-        const token = localStorage.getItem(AUTH_TOKEN_KEY);
+        const token = getAuthToken();
         if (!token || !data || !data.scores) return;
         if (isFileProtocolPage() && !getApiBase()) return;
         const you = typeof data.youIndex === "number" ? data.youIndex : 0;
@@ -4589,12 +4705,21 @@
   function initMultiplayerNetworking() {
     if (!elMultiplayerBtn) return;
     elMultiplayerBtn.addEventListener("click", () => {
+      if (isMultiplayerBlockedLocalOnly()) {
+        showToast("Create an account to play online multiplayer.", 3600);
+        return;
+      }
       if (!activePlayer) {
         showToast("Choose or create a player first.");
         return;
       }
       connectMultiplayerSocket();
     });
+    if (elMobileMpChatFab) {
+      elMobileMpChatFab.addEventListener("click", () => {
+        if (elMpChatExpandBtn) elMpChatExpandBtn.click();
+      });
+    }
     function leaveMultiplayerQueue() {
       if (mpSession.socket && mpSession.phase === "queue") {
         mpSession.socket.emit("mp:leaveQueue");
@@ -4760,6 +4885,200 @@
     return map[key] || (err ? String(err).replace(/_/g, " ") : "") || "Request failed";
   }
 
+  async function fetchAuth(path, body) {
+    const url = apiUrl(path);
+    if (isFileProtocolPage() && url.startsWith("/")) {
+      return null;
+    }
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await r.text();
+      let j = /** @type {{ ok?: boolean, error?: string, token?: string, username?: string }} */ ({});
+      try {
+        j = text ? JSON.parse(text) : {};
+      } catch {
+        return { ok: false, error: "BAD_RESPONSE" };
+      }
+      if (!r.ok) {
+        j.ok = false;
+        if (!j.error) {
+          if (r.status === 401) j.error = "INVALID_CREDENTIALS";
+          else if (r.status === 503) j.error = "DATABASE_NOT_CONFIGURED";
+          else if (r.status === 409) j.error = "USERNAME_TAKEN";
+          else if (r.status === 400) j.error = "INVALID_INPUT";
+          else j.error = `HTTP_${r.status}`;
+        }
+      } else if (j.token != null && j.ok !== false) {
+        j.ok = true;
+      }
+      return j;
+    } catch (e) {
+      console.error("[auth] fetch failed", path, e);
+      return { ok: false, error: "NETWORK" };
+    }
+  }
+
+  function initLoginGateUi() {
+    const elGateUser = /** @type {HTMLInputElement | null} */ (document.getElementById("gateUser"));
+    const elGatePass = /** @type {HTMLInputElement | null} */ (document.getElementById("gatePass"));
+    const elGateRemember = /** @type {HTMLInputElement | null} */ (document.getElementById("gateRemember"));
+    const elGateLoginBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("gateLoginBtn"));
+    const elGateRegisterBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("gateRegisterBtn"));
+    const elGateRegUser = /** @type {HTMLInputElement | null} */ (document.getElementById("gateRegUser"));
+    const elGateRegPass = /** @type {HTMLInputElement | null} */ (document.getElementById("gateRegPass"));
+    const elGatePassToggle = document.getElementById("gatePassToggle");
+    const elGateForgotBtn = document.getElementById("gateForgotBtn");
+    const elGatePlayLocalBtn = document.getElementById("gatePlayLocalBtn");
+    const elGateShowRegisterBtn = document.getElementById("gateShowRegisterBtn");
+    const elGateBackToLoginBtn = document.getElementById("gateBackToLoginBtn");
+    const formGateLogin = document.getElementById("gateLoginForm");
+    const formGateReg = document.getElementById("gateRegisterForm");
+
+    const fileHint =
+      "Open this game from your server (npm start → http://localhost:3000) or set MULTIPLAYER_SERVER_URL in multiplayer-config.js to your live API URL.";
+
+    if (elGatePassToggle && elGatePass) {
+      elGatePassToggle.addEventListener("click", () => {
+        const t = elGatePass.type === "password" ? "text" : "password";
+        elGatePass.type = t;
+        elGatePassToggle.setAttribute("aria-label", t === "password" ? "Show password" : "Hide password");
+      });
+    }
+    if (elGateForgotBtn) {
+      elGateForgotBtn.addEventListener("click", () => {
+        showToast("Password recovery is not available in-game — contact support or reset via your host.", 4200);
+      });
+    }
+    if (elGatePlayLocalBtn) {
+      elGatePlayLocalBtn.addEventListener("click", () => {
+        try {
+          localStorage.setItem(LOCAL_ONLY_KEY, "1");
+        } catch {
+          /* ignore */
+        }
+        setAuthToken(null, true);
+        proceedAfterLoginGate();
+        showToast("Playing locally — sign in anytime for online multiplayer.", 2800);
+      });
+    }
+    if (elGateShowRegisterBtn && formGateLogin && formGateReg) {
+      elGateShowRegisterBtn.addEventListener("click", () => {
+        if (elGateStatus) elGateStatus.textContent = "";
+        formGateLogin.classList.add("hidden");
+        formGateReg.classList.remove("hidden");
+      });
+    }
+    if (elGateBackToLoginBtn && formGateLogin && formGateReg) {
+      elGateBackToLoginBtn.addEventListener("click", () => {
+        if (elGateStatus) elGateStatus.textContent = "";
+        formGateReg.classList.add("hidden");
+        formGateLogin.classList.remove("hidden");
+      });
+    }
+
+    async function gateDoLogin() {
+      const rawU = String((elGateUser && elGateUser.value) || "").trim();
+      const u = rawU.toLowerCase();
+      const p = elGatePass ? String(elGatePass.value || "") : "";
+      if (!u || !p) {
+        if (elGateStatus) elGateStatus.textContent = "Enter user and password.";
+        return;
+      }
+      if (elGateLoginBtn) {
+        elGateLoginBtn.disabled = true;
+        elGateLoginBtn.textContent = "Signing in…";
+      }
+      if (elGateStatus) elGateStatus.textContent = "";
+      try {
+        const j = await fetchAuth("/api/auth/login", { username: u, password: p });
+        if (j == null) {
+          if (elGateStatus) elGateStatus.textContent = fileHint;
+          return;
+        }
+        if (j && j.ok && j.token) {
+          try {
+            localStorage.removeItem(LOCAL_ONLY_KEY);
+          } catch {
+            /* ignore */
+          }
+          setAuthToken(j.token, !!(elGateRemember && elGateRemember.checked));
+          proceedAfterLoginGate();
+          showToast("Signed in — you can use online multiplayer.", 2400);
+        } else {
+          if (elGateStatus) elGateStatus.textContent = formatAuthError(j && j.error);
+        }
+      } catch (e) {
+        console.error("[auth] gate login", e);
+        if (elGateStatus) elGateStatus.textContent = "Something went wrong — try again.";
+      } finally {
+        if (elGateLoginBtn) {
+          elGateLoginBtn.disabled = false;
+          elGateLoginBtn.textContent = "Login";
+        }
+      }
+    }
+
+    async function gateDoRegister() {
+      const rawU = String((elGateRegUser && elGateRegUser.value) || "").trim();
+      const u = rawU.toLowerCase();
+      const p = elGateRegPass ? String(elGateRegPass.value || "") : "";
+      if (!u || !p) {
+        if (elGateStatus) elGateStatus.textContent = "Enter user and password.";
+        return;
+      }
+      if (elGateRegisterBtn) {
+        elGateRegisterBtn.disabled = true;
+        elGateRegisterBtn.textContent = "Creating…";
+      }
+      if (elGateStatus) elGateStatus.textContent = "";
+      try {
+        const j = await fetchAuth("/api/auth/register", { username: u, password: p });
+        if (j == null) {
+          if (elGateStatus) elGateStatus.textContent = fileHint;
+          return;
+        }
+        if (j && j.ok && j.token) {
+          try {
+            localStorage.removeItem(LOCAL_ONLY_KEY);
+          } catch {
+            /* ignore */
+          }
+          setAuthToken(j.token, true);
+          proceedAfterLoginGate();
+          showToast("Account created — you’re signed in.", 2400);
+        } else {
+          if (elGateStatus) elGateStatus.textContent = formatAuthError(j && j.error);
+        }
+      } catch (e) {
+        console.error("[auth] gate register", e);
+        if (elGateStatus) elGateStatus.textContent = "Something went wrong — try again.";
+      } finally {
+        if (elGateRegisterBtn) {
+          elGateRegisterBtn.disabled = false;
+          elGateRegisterBtn.textContent = "Create account";
+        }
+      }
+    }
+
+    if (formGateLogin) {
+      formGateLogin.addEventListener("submit", (e) => {
+        e.preventDefault();
+        void gateDoLogin();
+      });
+    }
+    if (formGateReg) {
+      formGateReg.addEventListener("submit", (e) => {
+        e.preventDefault();
+        void gateDoRegister();
+      });
+    }
+  }
+
   function initAuthUi() {
     if (elAuthAccountBtn) {
       elAuthAccountBtn.addEventListener("click", () => openAuthModal("login"));
@@ -4768,55 +5087,6 @@
     if (elAuthBackdrop) elAuthBackdrop.addEventListener("click", () => closeAuthModal());
     if (elAuthShowRegisterBtn) elAuthShowRegisterBtn.addEventListener("click", () => openAuthModal("register"));
     if (elAuthShowLoginBtn) elAuthShowLoginBtn.addEventListener("click", () => openAuthModal("login"));
-
-    async function postAuth(path, body) {
-      const url = apiUrl(path);
-      if (isFileProtocolPage() && url.startsWith("/")) {
-        if (elAuthStatus) {
-          elAuthStatus.textContent =
-            "Open this game from your server (npm start → http://localhost:3000) or set MULTIPLAYER_SERVER_URL in multiplayer-config.js to your live API URL.";
-        }
-        return null;
-      }
-      try {
-        const r = await fetch(url, {
-          method: "POST",
-          mode: "cors",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify(body),
-        });
-        const text = await r.text();
-        let j = /** @type {{ ok?: boolean, error?: string, token?: string, username?: string }} */ ({});
-        try {
-          j = text ? JSON.parse(text) : {};
-        } catch {
-          if (elAuthStatus) elAuthStatus.textContent = r.ok ? "Unexpected server response." : `Server error (${r.status}).`;
-          return { ok: false, error: "BAD_RESPONSE" };
-        }
-        if (!r.ok) {
-          j.ok = false;
-          if (!j.error) {
-            if (r.status === 401) j.error = "INVALID_CREDENTIALS";
-            else if (r.status === 503) j.error = "DATABASE_NOT_CONFIGURED";
-            else if (r.status === 409) j.error = "USERNAME_TAKEN";
-            else if (r.status === 400) j.error = "INVALID_INPUT";
-            else j.error = `HTTP_${r.status}`;
-          }
-        } else if (j.token != null && j.ok !== false) {
-          j.ok = true;
-        }
-        return j;
-      } catch (e) {
-        const msg = e && typeof e === "object" && "message" in e ? String(/** @type {{message?:string}} */ (e).message) : "";
-        const corsHint =
-          msg.includes("Failed to fetch") || msg.includes("NetworkError")
-            ? " (CORS: add your site to CORS_ORIGIN on the server, or use npm start on the same host.)"
-            : "";
-        if (elAuthStatus) elAuthStatus.textContent = `Network error${corsHint}`;
-        console.error("[auth] fetch failed", path, e);
-        return { ok: false, error: "NETWORK" };
-      }
-    }
 
     async function doLogin() {
       const rawU = String((elAuthLoginUser && elAuthLoginUser.value) || "").trim();
@@ -4832,10 +5102,20 @@
       }
       if (elAuthStatus) elAuthStatus.textContent = "";
       try {
-        const j = await postAuth("/api/auth/login", { username: u, password: p });
-        if (j == null) return;
+        const j = await fetchAuth("/api/auth/login", { username: u, password: p });
+        if (j == null) {
+          if (elAuthStatus) elAuthStatus.textContent =
+            "Open this game from your server (npm start → http://localhost:3000) or set MULTIPLAYER_SERVER_URL in multiplayer-config.js to your live API URL.";
+          return;
+        }
         if (j && j.ok && j.token) {
-          localStorage.setItem(AUTH_TOKEN_KEY, j.token);
+          try {
+            localStorage.removeItem(LOCAL_ONLY_KEY);
+          } catch {
+            /* ignore */
+          }
+          setAuthToken(j.token, true);
+          syncLocalOnlyMultiplayerUi();
           if (elAuthStatus) elAuthStatus.textContent = `Signed in as ${j.username || u}`;
           closeAuthModal();
           showToast("Signed in — global leaderboard will sync.", 2400);
@@ -4867,10 +5147,20 @@
       }
       if (elAuthStatus) elAuthStatus.textContent = "";
       try {
-        const j = await postAuth("/api/auth/register", { username: u, password: p });
-        if (j == null) return;
+        const j = await fetchAuth("/api/auth/register", { username: u, password: p });
+        if (j == null) {
+          if (elAuthStatus) elAuthStatus.textContent =
+            "Open this game from your server (npm start → http://localhost:3000) or set MULTIPLAYER_SERVER_URL in multiplayer-config.js to your live API URL.";
+          return;
+        }
         if (j && j.ok && j.token) {
-          localStorage.setItem(AUTH_TOKEN_KEY, j.token);
+          try {
+            localStorage.removeItem(LOCAL_ONLY_KEY);
+          } catch {
+            /* ignore */
+          }
+          setAuthToken(j.token, true);
+          syncLocalOnlyMultiplayerUi();
           if (elAuthStatus) elAuthStatus.textContent = "Account created.";
           closeAuthModal();
           showToast("Registered — you’re signed in.", 2400);
@@ -4905,6 +5195,7 @@
     }
   }
 
+  initLoginGateUi();
   initAuthUi();
 
   // ---------- Game loop ----------
@@ -4965,14 +5256,19 @@
   applyTheme();
   buildKeybindUI();
 
-  // Device modal on first visit; otherwise start modal or active player
+  // Device modal first; then login gate (or play locally); then start / active player
   if (!deviceMode && elDeviceModal) {
     elDeviceModal.classList.remove("hidden");
   } else {
     document.documentElement.classList.toggle("device-touch-mode", deviceMode === "mobile");
     syncExitAndRotateUI();
-    if (save.activePlayerId && save.players[save.activePlayerId]) setActivePlayer(save.activePlayerId);
-    else openStartModal();
+    if (!hasPassedLoginGate()) {
+      openLoginGateModal();
+    } else if (save.activePlayerId && save.players[save.activePlayerId]) {
+      setActivePlayer(save.activePlayerId);
+    } else {
+      openStartModal();
+    }
   }
 
   // Build palette + validate initial empty grid
@@ -4980,6 +5276,7 @@
   scheduleValidate();
   syncProfileUI();
   initMultiplayerNetworking();
+  syncLocalOnlyMultiplayerUi();
 
   // (Modal button listeners are wired above; avoid duplicates here.)
 
