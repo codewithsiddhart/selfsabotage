@@ -2,8 +2,11 @@ const jwt = require("jsonwebtoken");
 
 function getSecret() {
   const s = process.env.JWT_SECRET || "";
-  if (!s && process.env.NODE_ENV === "production") {
-    console.warn("[auth] JWT_SECRET missing — auth disabled in production until set");
+  if (process.env.NODE_ENV === "production") {
+    if (!s) {
+      throw new Error("JWT_SECRET is required in production. Set it in your environment.");
+    }
+    return s;
   }
   return s || "dev-only-change-me";
 }

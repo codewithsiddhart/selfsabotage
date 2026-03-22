@@ -24,7 +24,11 @@ function createRateLimiter({ maxPerWindow, windowMs }) {
     return true;
   }
 
-  return { allow };
+  function remove(key) {
+    buckets.delete(key);
+  }
+
+  return { allow, remove };
 }
 
 module.exports = { createRateLimiter };

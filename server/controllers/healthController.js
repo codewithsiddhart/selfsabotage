@@ -1,7 +1,7 @@
 function healthHandler(_req, res) {
   res.json({
     ok: true,
-    service: "tuffgame-multiplayer-api",
+    service: "self-sabotage-builder-api",
     time: new Date().toISOString(),
   });
 }

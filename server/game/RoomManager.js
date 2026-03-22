@@ -3,6 +3,7 @@ const { createPlayerRecord } = require("./PlayerState");
 const { GameSession } = require("./GameSession");
 const { config } = require("../config");
 const { parseMaxPlayers } = require("../utils/validation");
+const { randomRoomCode } = require("../utils/roomCode");
 
 /**
  * In-memory registry: room code → Room. Single process only (Render free = one instance).
@@ -48,10 +49,22 @@ class RoomManager {
     const max = parseMaxPlayers(payload.maxPlayers, cap) || cap;
     const min = Math.min(config.game.minPlayers, max);
 
+    let code;
+    let attempts = 0;
+    const maxAttempts = 50;
+    do {
+      code = randomRoomCode(6);
+      attempts++;
+      if (attempts >= maxAttempts) {
+        throw new Error("Failed to generate unique room code");
+      }
+    } while (this.byCode.has(code));
+
     const room = new Room({
       maxPlayers: max,
       minPlayersToStart: min,
       hostSocketId: socket.id,
+      code,
     });
 
     this.byCode.set(room.code, room);
@@ -180,10 +193,12 @@ class RoomManager {
         }
         this.io.to(room.id).emit("game:event", { type: "game:ended", ...summary });
         this.broadcastRoom(room);
-        try {
-          await this.persist.onMatchEnded({ room, summary });
-        } catch (e) {
-          console.error("persist.onMatchEnded", e);
+        if (this.persist) {
+          try {
+            await this.persist.onMatchEnded({ room, summary });
+          } catch (e) {
+            console.error("persist.onMatchEnded", e);
+          }
         }
       },
     });

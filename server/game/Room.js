@@ -6,9 +6,9 @@ let roomSeq = 1;
  * One multiplayer room: lobby, in-game state, and player slots (in-memory only).
  */
 class Room {
-  constructor({ maxPlayers, minPlayersToStart, hostSocketId }) {
+  constructor({ maxPlayers, minPlayersToStart, hostSocketId, code }) {
     this.id = `room_${Date.now().toString(36)}_${(roomSeq++).toString(36)}`;
-    this.code = randomRoomCode(6);
+    this.code = code != null ? code : randomRoomCode(6);
     this.maxPlayers = maxPlayers;
     this.minPlayersToStart = minPlayersToStart;
     this.hostSocketId = hostSocketId;

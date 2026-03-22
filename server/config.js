@@ -40,6 +40,8 @@ const config = {
 
   supabaseUrl: process.env.SUPABASE_URL || "",
   supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  /** When true, CORS allows any origin (dev convenience). Do NOT set in production. */
+  corsDevBypass: process.env.CORS_DEV_BYPASS === "true",
 
   game: {
     minPlayers: Math.max(1, intEnv("GAME_MIN_PLAYERS", 2)),

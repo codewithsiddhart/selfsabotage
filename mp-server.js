@@ -17,6 +17,8 @@ const ROUND_BUILD_PLAY_POINTS = 100;
 const ROUND_FINAL_WIN_BASE = 80;
 const ROUND_FINAL_TIME_BONUS_MAX = 120;
 const REMATCH_WAIT_MS = 45000;
+const PLAY_PHASE_TIMEOUT_MS = 120000;
+const FINAL_ROUND_TIMEOUT_MS = 180000;
 const BUILD_PLAY_ROUNDS = 4;
 const CHAT_MAX_LEN = 200;
 const CHAT_MIN_INTERVAL_MS = 400;
@@ -80,6 +82,8 @@ function initMultiplayer(io) {
    * @property {{0?: number, 1?: number}} lastSpectateAt
    * @property {{0?:boolean,1?:boolean}} rematchVotes
    * @property {ReturnType<typeof setTimeout> | null} rematchTimer
+   * @property {ReturnType<typeof setTimeout> | null} playPhaseTimer
+   * @property {ReturnType<typeof setTimeout> | null} finalRoundTimer
    * @property {{0?: object, 1?: object}} finalResults
    * @property {boolean} playRunResolved
    */
@@ -98,6 +102,8 @@ function initMultiplayer(io) {
     const m = matches.get(matchId);
     if (!m) return;
     if (m.rematchTimer) clearTimeout(m.rematchTimer);
+    if (m.playPhaseTimer) clearTimeout(m.playPhaseTimer);
+    if (m.finalRoundTimer) clearTimeout(m.finalRoundTimer);
     for (const sid of m.socketIds) {
       socketToMatch.delete(sid);
     }
@@ -162,6 +168,7 @@ function initMultiplayer(io) {
    * @param {TileType[]} tilesFlat
    */
   function startPlayPhase(m, tilesFlat) {
+    if (m.playPhaseTimer) clearTimeout(m.playPhaseTimer);
     m.phase = "play";
     m.playRunResolved = false;
     m.playRunSeed = (Math.floor(Math.random() * 0xffffffff) ^ Date.now()) >>> 0;
@@ -187,6 +194,15 @@ function initMultiplayer(io) {
       });
       emitScores(sB, m);
     }
+    m.playPhaseTimer = setTimeout(() => {
+      const mm = matches.get(m.id);
+      if (!mm || mm.phase !== "play" || mm.playRunResolved) return;
+      mm.playRunResolved = true;
+      mm.playPhaseTimer = null;
+      applyBuildPlayScore(mm, "lose", 1 - mm.builderIdx);
+      broadcastScores(mm);
+      advanceAfterBuildPlayRound(mm);
+    }, PLAY_PHASE_TIMEOUT_MS);
   }
 
   /**
@@ -210,6 +226,24 @@ function initMultiplayer(io) {
         emitScores(sock, m);
       }
     }
+    m.finalRoundTimer = setTimeout(() => {
+      const mm = matches.get(m.id);
+      if (!mm || mm.phase !== "final" || !mm.finalResults) return;
+      const r = mm.finalResults;
+      if (r[0] == null) r[0] = { outcome: "lose", timeMs: 300000, pts: 0 };
+      if (r[1] == null) r[1] = { outcome: "lose", timeMs: 300000, pts: 0 };
+      mm.finalResults = {};
+      if (mm.finalRoundTimer) clearTimeout(mm.finalRoundTimer);
+      mm.finalRoundTimer = null;
+      mm.scores[0] += r[0].pts;
+      mm.scores[1] += r[1].pts;
+      if (r[0].outcome === "win" && r[1].outcome === "win") {
+        if (r[0].timeMs < r[1].timeMs) mm.scores[0] += 40;
+        else if (r[1].timeMs < r[0].timeMs) mm.scores[1] += 40;
+      }
+      broadcastScores(mm);
+      finishMatch(mm);
+    }, FINAL_ROUND_TIMEOUT_MS);
   }
 
   function advanceAfterBuildPlayRound(m) {
@@ -318,6 +352,8 @@ function initMultiplayer(io) {
           lastSpectateAt: {},
           rematchVotes: {},
           rematchTimer: null,
+          playPhaseTimer: null,
+          finalRoundTimer: null,
           finalResults: undefined,
           playRunResolved: false,
         };
@@ -426,6 +462,8 @@ function initMultiplayer(io) {
       const outcome = payload && payload.outcome === "win" ? "win" : "lose";
       const runnerIdx = 1 - m.builderIdx;
       if (idx !== runnerIdx) return;
+      if (m.playPhaseTimer) clearTimeout(m.playPhaseTimer);
+      m.playPhaseTimer = null;
       m.playRunResolved = true;
       applyBuildPlayScore(m, outcome, idx);
       broadcastScores(m);
@@ -454,6 +492,8 @@ function initMultiplayer(io) {
 
       const r = m.finalResults;
       if (r[0] != null && r[1] != null) {
+        if (m.finalRoundTimer) clearTimeout(m.finalRoundTimer);
+        m.finalRoundTimer = null;
         const a = r[0];
         const b = r[1];
         m.finalResults = {};

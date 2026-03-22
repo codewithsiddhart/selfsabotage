@@ -75,35 +75,47 @@ function registerSocketHandlers(io, roomManager) {
     socket.on("game:position", (payload, ack) => {
       const key = `${socket.id}:pos`;
       if (!posLimit.allow(key)) {
-        if (typeof ack === "function") ack({ ok: false, error: "RATE_LIMIT" });
+        const err = { ok: false, error: "RATE_LIMIT" };
+        if (typeof ack === "function") ack(err);
+        else socket.emit("error:msg", err);
         return;
       }
       const pos = parsePosition(payload);
       if (!pos) {
-        if (typeof ack === "function") ack({ ok: false, error: "INVALID_POSITION" });
+        const err = { ok: false, error: "INVALID_POSITION" };
+        if (typeof ack === "function") ack(err);
+        else socket.emit("error:msg", err);
         return;
       }
       const seq = payload && payload.seq != null ? Number(payload.seq) : 0;
       const res = roomManager.updatePosition(socket, pos, seq);
       if (typeof ack === "function") ack(res);
+      else if (!res.ok) socket.emit("error:msg", res);
     });
 
     socket.on("game:action", (payload, ack) => {
       const key = `${socket.id}:act`;
       if (!actLimit.allow(key)) {
-        if (typeof ack === "function") ack({ ok: false, error: "RATE_LIMIT" });
+        const err = { ok: false, error: "RATE_LIMIT" };
+        if (typeof ack === "function") ack(err);
+        else socket.emit("error:msg", err);
         return;
       }
       const action = parseAction(payload);
       if (!action) {
-        if (typeof ack === "function") ack({ ok: false, error: "INVALID_ACTION" });
+        const err = { ok: false, error: "INVALID_ACTION" };
+        if (typeof ack === "function") ack(err);
+        else socket.emit("error:msg", err);
         return;
       }
       const res = roomManager.relayAction(socket, action);
       if (typeof ack === "function") ack(res);
+      else if (!res.ok) socket.emit("error:msg", res);
     });
 
     socket.on("disconnecting", () => {
+      posLimit.remove(`${socket.id}:pos`);
+      actLimit.remove(`${socket.id}:act`);
       roomManager.leaveRoom(socket, true);
     });
   });

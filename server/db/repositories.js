@@ -112,7 +112,9 @@ async function fetchLeaderboard(limit = 50) {
 
   const { data: scores, error: e2 } = await sb
     .from("scores")
-    .select("user_id, display_name, total_score");
+    .select("user_id, display_name, total_score")
+    .order("total_score", { ascending: false })
+    .limit(10000);
 
   if (e2 || !scores) {
     console.error("fetchLeaderboard", e2);

@@ -27,7 +27,7 @@ app.use(express.json({ limit: "32kb" }));
 
 function corsOriginCallback(origin, cb) {
   const list = config.corsOrigins;
-  const dev = config.nodeEnv !== "production";
+  const dev = config.corsDevBypass;
   if (isOriginAllowed(origin, list, { allowDevBypass: dev })) {
     return cb(null, true);
   }
