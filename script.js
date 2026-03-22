@@ -799,11 +799,6 @@
 
       window.addEventListener("keydown", onKeyDown, { passive: false, capture: true });
       window.addEventListener("keyup", onKeyUp, { passive: false, capture: true });
-      window.addEventListener("blur", () => {
-        this.down.clear();
-        this.pressed.clear();
-        this.released.clear();
-      });
     }
     tick() {
       this.pressed.clear();
@@ -1075,6 +1070,8 @@
   let touchLeftDown = false;
   let touchRightDown = false;
   let touchJumpDown = false;
+  /** Prior frame touch jump (for edge-triggered jump buffer, same as keyboard). */
+  let touchJumpPrevDown = false;
 
   function setDeviceMode(m) {
     deviceMode = m;
@@ -1250,23 +1247,42 @@
   if (elDeviceDesktopBtn) elDeviceDesktopBtn.addEventListener("click", () => setDeviceMode("desktop"));
   if (elDeviceMobileBtn) elDeviceMobileBtn.addEventListener("click", () => setDeviceMode("mobile"));
 
+  function releaseAllPhysicalInput() {
+    input.down.clear();
+    input.pressed.clear();
+    input.released.clear();
+    touchLeftDown = false;
+    touchRightDown = false;
+    touchJumpDown = false;
+    touchJumpPrevDown = false;
+  }
+
+  window.addEventListener("blur", releaseAllPhysicalInput);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") releaseAllPhysicalInput();
+  });
+  window.addEventListener("pagehide", releaseAllPhysicalInput);
+
   if (elTouchLeft) {
-    elTouchLeft.addEventListener("touchstart", (e) => { e.preventDefault(); touchLeftDown = true; });
-    elTouchLeft.addEventListener("touchend", (e) => { e.preventDefault(); touchLeftDown = false; });
+    elTouchLeft.addEventListener("touchstart", (e) => { e.preventDefault(); touchLeftDown = true; }, { passive: false });
+    elTouchLeft.addEventListener("touchend", (e) => { e.preventDefault(); touchLeftDown = false; }, { passive: false });
+    elTouchLeft.addEventListener("touchcancel", () => { touchLeftDown = false; });
     elTouchLeft.addEventListener("mousedown", () => touchLeftDown = true);
     elTouchLeft.addEventListener("mouseup", () => touchLeftDown = false);
     elTouchLeft.addEventListener("mouseleave", () => touchLeftDown = false);
   }
   if (elTouchRight) {
-    elTouchRight.addEventListener("touchstart", (e) => { e.preventDefault(); touchRightDown = true; });
-    elTouchRight.addEventListener("touchend", (e) => { e.preventDefault(); touchRightDown = false; });
+    elTouchRight.addEventListener("touchstart", (e) => { e.preventDefault(); touchRightDown = true; }, { passive: false });
+    elTouchRight.addEventListener("touchend", (e) => { e.preventDefault(); touchRightDown = false; }, { passive: false });
+    elTouchRight.addEventListener("touchcancel", () => { touchRightDown = false; });
     elTouchRight.addEventListener("mousedown", () => touchRightDown = true);
     elTouchRight.addEventListener("mouseup", () => touchRightDown = false);
     elTouchRight.addEventListener("mouseleave", () => touchRightDown = false);
   }
   if (elTouchJump) {
-    elTouchJump.addEventListener("touchstart", (e) => { e.preventDefault(); touchJumpDown = true; });
-    elTouchJump.addEventListener("touchend", (e) => { e.preventDefault(); touchJumpDown = false; });
+    elTouchJump.addEventListener("touchstart", (e) => { e.preventDefault(); touchJumpDown = true; }, { passive: false });
+    elTouchJump.addEventListener("touchend", (e) => { e.preventDefault(); touchJumpDown = false; }, { passive: false });
+    elTouchJump.addEventListener("touchcancel", () => { touchJumpDown = false; });
     elTouchJump.addEventListener("mousedown", () => touchJumpDown = true);
     elTouchJump.addEventListener("mouseup", () => touchJumpDown = false);
     elTouchJump.addEventListener("mouseleave", () => touchJumpDown = false);
@@ -3187,8 +3203,11 @@
       return;
     }
 
-    // Jump buffer (keyboard + touch)
-    const jumpPressed = input.wasPressed("w") || input.wasPressed("arrowup") || input.wasPressed("space") || (deviceMode === "mobile" && touchJumpDown);
+    // Jump buffer (keyboard + touch): edge on touch like key repeat, not hold-to-fill-buffer
+    const touchJumpEdge = deviceMode === "mobile" && touchJumpDown && !touchJumpPrevDown;
+    touchJumpPrevDown = deviceMode === "mobile" && touchJumpDown;
+    const jumpPressed =
+      input.wasPressed("w") || input.wasPressed("arrowup") || input.wasPressed("space") || touchJumpEdge;
     if (jumpPressed) play.player.jumpBufferMs = 135;
     else play.player.jumpBufferMs = Math.max(0, play.player.jumpBufferMs - dt);
 
@@ -3408,9 +3427,10 @@
       const sab = tile.sab.pad;
       if (sab.type === "delayed") {
         const runT0 = state.t0;
+        const st = state;
         setTimeout(() => {
-          if (!play || play.ended || play.t0 !== runT0) return;
-          play.player.vy = -PHYS.jumpV * sab.strength;
+          if (st.ended || play !== st || play.t0 !== runT0) return;
+          st.player.vy = -PHYS.jumpV * sab.strength;
           AudioSys.sfx.pad();
         }, sab.delayMs);
       } else {
