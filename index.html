@@ -9,11 +9,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Self-Sabotage Builder | NeuroGlitch</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div id="mobileLandscapeHint" class="mobileLandscapeHint hidden" role="status">Landscape works best for building — rotate your device.</div>
     <!-- Device mode: show on first visit -->
     <div id="deviceModal" class="modal deviceModal hidden" role="dialog" aria-label="Choose your device">
       <div class="modalHeader">
@@ -92,7 +93,7 @@
             </div>
             <div class="stat">
               <div class="k">Validation</div>
-              <div id="validationValue" class="v warn">Needs Start + Goal</div>
+              <div id="validationValue" class="v warn">Needs Start + Goal + ground under Start</div>
             </div>
           </div>
 
@@ -102,7 +103,7 @@
             <button id="clearBtn" class="btn danger" type="button">Clear Grid</button>
           </div>
           <p id="mpBuildHint" class="mpBuildHint hidden">
-            Online match: place <b>Start</b> and <b>Goal</b>, then tap <b>Submit level</b> here. Do not use Play — it stays off until your turn to run.
+            Online match: place <b>Start</b> on solid ground (platform / pad / speed under it), add <b>Goal</b>, then tap <b>Submit level</b>. Do not use Play until it’s your run.
           </p>
 
           <div class="help">
@@ -463,22 +464,22 @@
         <button type="button" class="iconBtn" id="authModalCloseBtn" aria-label="Close">✕</button>
       </div>
       <div class="modalBody">
-        <div id="authFormLogin" class="authForm">
-          <label class="authLabel"><span class="authIcon" aria-hidden="true">👤</span> Username</label>
-          <input id="authLoginUser" class="input" type="text" autocomplete="username" maxlength="32" />
-          <label class="authLabel"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
-          <input id="authLoginPass" class="input" type="password" autocomplete="current-password" maxlength="128" />
-          <button type="button" class="btn primary authSubmitBtn" id="authLoginBtn">Sign in</button>
+        <form id="authLoginForm" class="authForm" action="#" method="post" autocomplete="on">
+          <label class="authLabel" for="authLoginUser"><span class="authIcon" aria-hidden="true">👤</span> Username</label>
+          <input id="authLoginUser" class="input authInput" name="username" type="text" inputmode="text" autocomplete="username" maxlength="32" required />
+          <label class="authLabel" for="authLoginPass"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
+          <input id="authLoginPass" class="input authInput" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+          <button type="submit" class="btn primary authSubmitBtn" id="authLoginBtn">Sign in</button>
           <button type="button" class="btn linkish" id="authShowRegisterBtn">Create account</button>
-        </div>
-        <div id="authFormRegister" class="authForm hidden">
-          <label class="authLabel"><span class="authIcon" aria-hidden="true">👤</span> Username</label>
-          <input id="authRegUser" class="input" type="text" autocomplete="username" maxlength="32" />
-          <label class="authLabel"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
-          <input id="authRegPass" class="input" type="password" autocomplete="new-password" maxlength="128" />
-          <button type="button" class="btn primary authSubmitBtn" id="authRegisterBtn">Register</button>
+        </form>
+        <form id="authRegisterForm" class="authForm hidden" action="#" method="post" autocomplete="on">
+          <label class="authLabel" for="authRegUser"><span class="authIcon" aria-hidden="true">👤</span> Username</label>
+          <input id="authRegUser" class="input authInput" name="username" type="text" inputmode="text" autocomplete="username" maxlength="32" required />
+          <label class="authLabel" for="authRegPass"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
+          <input id="authRegPass" class="input authInput" name="password" type="password" autocomplete="new-password" maxlength="128" required />
+          <button type="submit" class="btn primary authSubmitBtn" id="authRegisterBtn">Register</button>
           <button type="button" class="btn linkish" id="authShowLoginBtn">Back to sign in</button>
-        </div>
+        </form>
         <p id="authStatus" class="authStatus" role="status"></p>
       </div>
     </div>

@@ -967,6 +967,10 @@ html.device-touch-mode .touchControls:not(.hidden) {
   gap: 6px;
 }
 
+html.device-touch-mode .exitToMenuBtn:not(.hidden) {
+  z-index: 140;
+}
+
 /* Timer pill (play mode, preconfigured levels) */
 .timerPill {
   font-variant-numeric: tabular-nums;
@@ -1022,6 +1026,28 @@ html.device-touch-mode .touchControls:not(.hidden) {
   .app.mobilePlayFullscreen .stageWrap {
     padding: 0;
     border-radius: 0;
+  }
+  .app.mobilePlayFullscreen .stageWrap .hud {
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(360px, calc(100vw - 20px));
+    z-index: 115;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    pointer-events: none;
+  }
+  .app.mobilePlayFullscreen .stageWrap .hud .pill,
+  .app.mobilePlayFullscreen .stageWrap .hud .mpHud {
+    pointer-events: auto;
+  }
+  .app.mobilePlayFullscreen .mpHud {
+    padding: 8px 10px;
+    font-size: 11px;
+    max-width: 100%;
   }
   .app.mobilePlayFullscreen .main {
     grid-template-columns: 1fr;
@@ -1452,37 +1478,87 @@ html[data-theme="light"] .mpOverlayX {
   flex-shrink: 0;
 }
 
+#authBackdrop.backdrop {
+  z-index: 92;
+}
+
 .modal.authModal {
-  width: min(400px, calc(100vw - 32px));
-  max-width: 400px;
-  max-height: min(88vh, 560px);
+  width: min(380px, calc(100vw - 28px));
+  max-width: 380px;
+  max-height: min(90vh, 520px);
+  z-index: 95;
+  transform: translate(-50%, -50%) scale(1);
+  transition: transform 200ms ease, box-shadow 200ms ease, opacity 200ms ease;
+}
+
+.modal.authModal:not(.hidden) {
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(122, 167, 255, 0.12);
 }
 
 .authModal .authForm {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .authLabel {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 900;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
+  margin-top: 2px;
 }
 .authIcon {
   font-size: 14px;
 }
+.authInput {
+  min-height: 44px;
+  border-radius: 12px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.authInput:focus {
+  outline: none;
+  border-color: rgba(122, 167, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(122, 167, 255, 0.18);
+}
 .authSubmitBtn {
-  margin-top: 6px;
-  min-height: 48px;
+  margin-top: 4px;
+  min-height: 46px;
+  width: 100%;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+.authSubmitBtn:disabled {
+  opacity: 0.65;
+  transform: none;
+  cursor: wait;
 }
 .authStatus {
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--muted);
   min-height: 1.2em;
+}
+
+.mobileLandscapeHint {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 10px 14px;
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  background: linear-gradient(180deg, rgba(45, 212, 191, 0.22), rgba(10, 12, 26, 0.92));
+  border-bottom: 1px solid rgba(45, 212, 191, 0.35);
+  color: var(--text);
+  pointer-events: none;
+}
+.mobileLandscapeHint:not(.hidden) {
+  display: block;
 }
 
 .btn.mpRematchConfirmed {

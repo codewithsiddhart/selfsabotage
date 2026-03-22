@@ -33,6 +33,9 @@ function isOriginAllowed(origin, allowedList, opts = {}) {
   if (allowedList.includes("*")) return true;
   if (allowedList.includes(o)) return true;
 
+  // file:// and some embedded contexts send Origin: "null" (literal string). Allow only if listed in CORS_ORIGIN.
+  if (o === "null" && allowedList.some((e) => String(e).trim() === "null")) return true;
+
   for (const entry of allowedList) {
     const e = String(entry).trim();
     if (e === "*.vercel.app" || e === ".vercel.app") {

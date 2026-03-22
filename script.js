@@ -134,8 +134,8 @@
   const elAuthModal = $("authModal");
   const elAuthBackdrop = $("authBackdrop");
   const elAuthModalCloseBtn = /** @type {HTMLButtonElement | null} */ ($("authModalCloseBtn"));
-  const elAuthFormLogin = $("authFormLogin");
-  const elAuthFormRegister = $("authFormRegister");
+  const elAuthFormLogin = $("authLoginForm");
+  const elAuthFormRegister = $("authRegisterForm");
   const elAuthLoginUser = /** @type {HTMLInputElement | null} */ ($("authLoginUser"));
   const elAuthLoginPass = /** @type {HTMLInputElement | null} */ ($("authLoginPass"));
   const elAuthRegUser = /** @type {HTMLInputElement | null} */ ($("authRegUser"));
@@ -147,19 +147,51 @@
   const elAuthStatus = $("authStatus");
   const elGlobalLeaderboardList = $("globalLeaderboardList");
   const elGlobalLbHint = $("globalLbHint");
+  const elMobileLandscapeHint = $("mobileLandscapeHint");
 
   const AUTH_TOKEN_KEY = "ssb_auth_token_v1";
-  const API_BASE = (() => {
+
+  /** REST API origin. Same host as the current page → "" (relative /api/…, no CORS). Else full origin from config. */
+  function getApiBase() {
     try {
-      const u =
-        typeof window !== "undefined" && typeof window.MULTIPLAYER_SERVER_URL === "string"
-          ? String(window.MULTIPLAYER_SERVER_URL).trim().replace(/\/$/, "")
-          : "";
-      return u || "";
+      const w = typeof window !== "undefined" ? window : null;
+      if (!w || !w.location || !w.location.href) return "";
+      const pageOrigin = new URL(w.location.href).origin;
+
+      function sameOriginAsPage(urlStr) {
+        const t = String(urlStr || "").trim();
+        if (!t) return false;
+        const abs = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+        return new URL(abs).origin === pageOrigin;
+      }
+
+      if (typeof w.API_SERVER_URL === "string" && w.API_SERVER_URL.trim()) {
+        const s = w.API_SERVER_URL.trim().replace(/\/$/, "");
+        if (sameOriginAsPage(s)) return "";
+        return s;
+      }
+      if (typeof w.MULTIPLAYER_SERVER_URL === "string" && w.MULTIPLAYER_SERVER_URL.trim()) {
+        const s = w.MULTIPLAYER_SERVER_URL.trim().replace(/\/$/, "");
+        if (sameOriginAsPage(s)) return "";
+        return s;
+      }
+      return "";
     } catch {
       return "";
     }
-  })();
+  }
+
+  /** Full URL for /api/... calls (cross-origin or same-origin). */
+  function apiUrl(path) {
+    const p = path.startsWith("/") ? path : `/${path}`;
+    const base = getApiBase();
+    if (base) return `${base}${p}`;
+    return p;
+  }
+
+  function isFileProtocolPage() {
+    return typeof window !== "undefined" && window.location && window.location.protocol === "file:";
+  }
 
   /** Online match client state (Socket.IO). Declared early for menu/exit handlers. */
   const mpSession = {
@@ -1052,7 +1084,7 @@
     syncTouchControlsVisibility();
     syncExitAndRotateUI();
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    if (!token) {
+    if (!token && getApiBase()) {
       authCloseOpensStart = true;
       openAuthModal("login");
     } else if (!activePlayer) {
@@ -1071,11 +1103,27 @@
     }
     const app = document.querySelector(".app");
     if (app) {
-      const playFs = deviceMode === "mobile" && mode === "play" && play && !play.ended;
+      const mpRunFs =
+        mpSession.active && (mpSession.phase === "mpPlayOpponent" || mpSession.phase === "mpRound3");
+      const playFs =
+        deviceMode === "mobile" &&
+        mode === "play" &&
+        play &&
+        !play.spectatorMode &&
+        (!play.ended || mpRunFs);
       app.classList.toggle("mobilePlayFullscreen", playFs);
       app.classList.toggle("mobileBuild", deviceMode === "mobile" && mode === "build");
       app.classList.toggle("mobileBuildFullscreen", deviceMode === "mobile" && mode === "build");
     }
+    if (elMobileLandscapeHint) {
+      const portrait =
+        typeof window.matchMedia === "function" && window.matchMedia("(orientation: portrait)").matches;
+      elMobileLandscapeHint.classList.toggle("hidden", !(deviceMode === "mobile" && mode === "build" && portrait));
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("orientationchange", () => requestAnimationFrame(() => syncExitAndRotateUI()));
   }
 
   function setMpChromeLocked(on) {
@@ -1159,7 +1207,7 @@
         showToast("Use ✕ Menu to leave the match.");
         return;
       }
-      setMode("play");
+      openStartModal();
     });
   }
 
@@ -1227,6 +1275,9 @@
   // ---------- Build Grid ----------
   /** @type {TileType[][]} */
   const grid = makeGrid(COLS, ROWS, Tile.empty);
+  /** Build mode: short erase pop animations @type {{ gx: number, gy: number, t0: number, prev: TileType }[]} */
+  const eraseFx = [];
+  let lastBuildStatusText = "";
   /** @type {TileType} */
   let selectedTile = Tile.platform;
 
@@ -1271,7 +1322,9 @@
     const isErase = e.button === 2 || selectedTile === Tile.empty;
     if (isErase) {
       if (grid[gy][gx] !== Tile.empty) {
+        const prev = grid[gy][gx];
         grid[gy][gx] = Tile.empty;
+        eraseFx.push({ gx, gy, t0: performance.now(), prev });
         AudioSys.sfx.erase();
         scheduleValidate();
       }
@@ -1332,6 +1385,7 @@
   }
 
   function clearGrid() {
+    eraseFx.length = 0;
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) grid[y][x] = Tile.empty;
     AudioSys.sfx.clear();
     scheduleValidate();
@@ -1673,6 +1727,7 @@
   }
 
   function loadFlatIntoGrid(flat) {
+    eraseFx.length = 0;
     inflateGrid(grid, flat, COLS, ROWS);
     scheduleValidate();
     if (mode === "play") restartPlay();
@@ -1689,6 +1744,18 @@
   /** Tiles that count as “ground” directly under the goal for validation. */
   function isGoalSupportTile(t) {
     return t === Tile.platform || t === Tile.jumppad || t === Tile.speedBoost || t === Tile.pathBlock || t === Tile.start;
+  }
+
+  /** Play mode: only these are real solids under Start (pathBlock renders empty in play). */
+  function isSpawnSupportTile(t) {
+    return t === Tile.platform || t === Tile.jumppad || t === Tile.speedBoost;
+  }
+
+  /** Start must have sabotage-proof solid directly below (same cell column, row + 1). */
+  function spawnHasSolidSupport(g, start) {
+    if (!start) return false;
+    if (start.y >= ROWS - 1) return false;
+    return isSpawnSupportTile(g[start.y + 1][start.x]);
   }
 
   function jumpBoundsFromPhysics() {
@@ -1887,6 +1954,7 @@
   function isLevelReachable(g) {
     const { start, goal } = findStartGoalOn(g);
     if (!start || !goal) return false;
+    if (!spawnHasSolidSupport(g, start)) return false;
     if (!goalHasGrounding(g, goal)) return false;
     if (isPathBlockValid(g)) return true;
     return runReachabilityBfs(g, isStandableReach).reachesGoal;
@@ -2055,7 +2123,12 @@
   }
 
   /** @type {{ok:boolean, message:string, difficulty:number, counts:any, pathVerified?:boolean}} */
-  let lastValidation = { ok: false, message: "Needs Start + Goal", difficulty: 0, counts: countTiles(grid) };
+  let lastValidation = {
+    ok: false,
+    message: "Needs Start + Goal + ground under Start",
+    difficulty: 0,
+    counts: countTiles(grid),
+  };
 
   function validateLevel() {
     const counts = countTiles(grid);
@@ -2070,6 +2143,15 @@
     for (const k of Object.keys(BUILD_LIMITS)) {
       // @ts-ignore
       if (counts[k] > BUILD_LIMITS[k]) return { ok: false, message: "Over tile limit", difficulty, counts };
+    }
+
+    if (!spawnHasSolidSupport(grid, start)) {
+      return {
+        ok: false,
+        message: "Start needs solid support directly below (platform, jump pad, or speed tile).",
+        difficulty,
+        counts,
+      };
     }
 
     if (!goalHasGrounding(grid, goal)) {
@@ -2408,12 +2490,12 @@
   async function refreshGlobalLeaderboardList() {
     if (!elGlobalLeaderboardList) return;
     elGlobalLeaderboardList.innerHTML = "";
-    if (!API_BASE) {
-      elGlobalLeaderboardList.appendChild(makeEmptyLine("Set multiplayer-config.js (API URL) to load global board."));
+    if (isFileProtocolPage() && !getApiBase()) {
+      elGlobalLeaderboardList.appendChild(makeEmptyLine("Open via npm start or set MULTIPLAYER_SERVER_URL for global board."));
       return;
     }
     try {
-      const r = await fetch(`${API_BASE}/api/leaderboard/global?limit=50`);
+      const r = await fetch(apiUrl("/api/leaderboard/global?limit=50"));
       const j = await r.json();
       const rows = (j && j.leaderboard) || [];
       if (!rows.length) {
@@ -2532,6 +2614,7 @@
    * @property {number} padCooldownMs
    * @property {boolean} cursedActive
    * @property {number} cursedUntil
+   * @property {boolean} [spawnPinned] True for the solid tile directly under Start — never sabotaged or broken.
    */
 
   /**
@@ -2603,6 +2686,7 @@
       }
     }
     if (next === "play") {
+      lastBuildStatusText = "";
       if (mpSession.active && mpSession.phase === "mpBuild") {
         showToast("Submit your level to your opponent (multiplayer).");
         return;
@@ -2625,6 +2709,7 @@
       startPlay(null);
     } else {
       mode = "build";
+      lastBuildStatusText = "";
       play = null;
       updateTimerPill(null);
       syncTouchControlsVisibility();
@@ -2866,6 +2951,13 @@
     /** @type {RuntimeTile[][]} */
     const out = [];
     const levelSeed = seedFromGrid(grid);
+    const { start: startCell } = findStartGoalOn(grid);
+    let pinX = -1;
+    let pinY = -1;
+    if (startCell && spawnHasSolidSupport(grid, startCell)) {
+      pinX = startCell.x;
+      pinY = startCell.y + 1;
+    }
     for (let y = 0; y < ROWS; y++) {
       const row = [];
       for (let x = 0; x < COLS; x++) {
@@ -2873,7 +2965,9 @@
         const type = raw === Tile.pathBlock ? Tile.empty : raw;
         const tileSeed = hash2(x, y) ^ levelSeed ^ runSeed;
         const rng = mulberry32(tileSeed >>> 0);
-        const sab = type === Tile.start ? neutralSabotageProfile() : makeSabotageProfile(type, rng);
+        const spawnPinned = x === pinX && y === pinY && isSpawnSupportTile(raw);
+        const sab =
+          type === Tile.start || spawnPinned ? neutralSabotageProfile() : makeSabotageProfile(type, rng);
         const rt = /** @type {RuntimeTile} */ ({
           type,
           sab,
@@ -2886,6 +2980,7 @@
           padCooldownMs: 0,
           cursedActive: false,
           cursedUntil: 0,
+          spawnPinned,
         });
         if (type === Tile.start) {
           rt.sab = neutralSabotageProfile();
@@ -3109,7 +3204,7 @@
       !play.ended
     ) {
       play._spectEmitAcc += dt;
-      if (play._spectEmitAcc >= 90) {
+      if (play._spectEmitAcc >= 100) {
         play._spectEmitAcc = 0;
         mpSession.socket.emit("mp:spectateTick", {
           x: play.player.x,
@@ -3153,10 +3248,14 @@
         }
 
         // Broken platforms become empty
+        if (tile.spawnPinned) {
+          tile.solid = tile.type === Tile.platform || tile.type === Tile.jumppad || tile.type === Tile.speedBoost;
+          tile.breakTimer = 0;
+        }
         if ((tile.type === Tile.platform || tile.type === Tile.jumppad) && tile.breakTimer === 0 && tile.solid === false) {
           // already broken
         }
-        if (tile.type === Tile.platform && tile.breakTimer === 0 && tile.solid === false && tile.stepCount > 0) {
+        if (tile.type === Tile.platform && tile.breakTimer === 0 && tile.solid === false && tile.stepCount > 0 && !tile.spawnPinned) {
           addParticles(state, x * TILE + TILE / 2, y * TILE + TILE / 2, 8, false);
           tile.type = Tile.empty;
         }
@@ -3292,7 +3391,7 @@
 
   function onLand(state, gx, gy) {
     const tile = state.tiles[gy][gx];
-    if (tile.type === Tile.platform) {
+    if (tile.type === Tile.platform && !tile.spawnPinned) {
       tile.stepCount++;
       if (tile.sab.platform.type === "oneStep" && tile.stepCount >= 1) {
         tile.solid = false;
@@ -3418,6 +3517,7 @@
   }
 
   function end(state, outcome, reason) {
+    if (state.ended) return;
     state.ended = true;
     state.outcome = outcome;
     state.reason = reason;
@@ -3547,7 +3647,11 @@
 
     if (mode === "build") {
       drawBuild(ctx);
-      elStatusPill.textContent = "Build: place tiles (sabotage hidden)";
+      const btxt = "Build: place tiles (sabotage hidden)";
+      if (btxt !== lastBuildStatusText) {
+        lastBuildStatusText = btxt;
+        elStatusPill.textContent = btxt;
+      }
     } else if (mode === "play" && play) {
       const off = camOffset(play);
       ctx.save();
@@ -3754,6 +3858,35 @@
       ctx2.strokeStyle = pointer.canPlace ? "rgba(45, 212, 191, 0.55)" : "rgba(255, 77, 109, 0.5)";
       ctx2.lineWidth = 2;
       ctx2.strokeRect(pointer.gx * TILE + 1, pointer.gy * TILE + 1, TILE - 2, TILE - 2);
+      ctx2.restore();
+    }
+
+    const nowB = performance.now();
+    for (let i = eraseFx.length - 1; i >= 0; i--) {
+      const e = eraseFx[i];
+      const u = (nowB - e.t0) / 240;
+      if (u >= 1) {
+        eraseFx.splice(i, 1);
+        continue;
+      }
+      const ease = 1 - (1 - u) * (1 - u);
+      const cx = e.gx * TILE + TILE / 2;
+      const cy = e.gy * TILE + TILE / 2;
+      const sc = 1 - 0.38 * ease;
+      const alpha = 1 - u;
+      ctx2.save();
+      ctx2.globalAlpha = alpha * 0.88;
+      ctx2.translate(cx, cy);
+      ctx2.scale(sc, sc);
+      ctx2.translate(-cx, -cy);
+      drawTile(ctx2, e.prev, e.gx * TILE, e.gy * TILE, 0.72 + 0.2 * (1 - u), 0);
+      ctx2.restore();
+      ctx2.save();
+      ctx2.globalAlpha = alpha * 0.35;
+      ctx2.fillStyle = "rgba(255, 255, 255, 0.55)";
+      ctx2.beginPath();
+      ctx2.arc(cx, cy, TILE * (0.42 + 0.2 * (1 - u)), 0, Math.PI * 2);
+      ctx2.fill();
       ctx2.restore();
     }
 
@@ -4130,11 +4263,13 @@
       typeof window !== "undefined" && typeof window.MULTIPLAYER_SERVER_URL === "string"
         ? String(window.MULTIPLAYER_SERVER_URL).trim().replace(/\/$/, "")
         : "";
+    const authTok = localStorage.getItem(AUTH_TOKEN_KEY);
     const socketOpts = {
       query: { name },
       transports: ["websocket", "polling"],
       path: "/socket.io/",
     };
+    if (authTok) socketOpts.auth = { token: authTok };
     const socket = mpBase ? io(mpBase, socketOpts) : io(socketOpts);
     mpSession.socket = socket;
     mpSession.active = true;
@@ -4144,6 +4279,11 @@
 
     socket.on("connect", () => {
       if (mpSession.phase === "queue" && mpSession.socket === socket) socket.emit("mp:queue");
+    });
+
+    socket.on("mp:error", (payload) => {
+      const msg = payload && payload.message ? String(payload.message) : "Match error.";
+      showToast(msg, 4200);
     });
 
     socket.on("connect_error", (err) => {
@@ -4335,11 +4475,12 @@
     async function submitGlobalPointsAfterMatch(data) {
       try {
         const token = localStorage.getItem(AUTH_TOKEN_KEY);
-        if (!token || !API_BASE || !data || !data.scores) return;
+        if (!token || !data || !data.scores) return;
+        if (isFileProtocolPage() && !getApiBase()) return;
         const you = typeof data.youIndex === "number" ? data.youIndex : 0;
         const pts = Math.min(1500, Math.max(0, Math.floor(Number(data.scores[you]) || 0)));
         if (pts <= 0) return;
-        await fetch(`${API_BASE}/api/leaderboard/add-points`, {
+        await fetch(apiUrl("/api/leaderboard/add-points"), {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ points: pts }),
@@ -4457,7 +4598,7 @@
         lastValidation = validateLevel();
         syncBuildHUD();
         if (!lastValidation.ok) {
-          showToast("Need Start + Goal and a valid path before Submit.");
+          showToast(lastValidation.message || "Fix validation before Submit.");
           return;
         }
         const tilesFlat = flattenGrid(grid);
@@ -4558,6 +4699,13 @@
     if (elAuthFormRegister) elAuthFormRegister.classList.toggle("hidden", view !== "register");
     if (elAuthModalTitle) elAuthModalTitle.textContent = view === "register" ? "Create account" : "Sign in";
     if (elAuthStatus) elAuthStatus.textContent = "";
+    requestAnimationFrame(() => {
+      const focusEl =
+        view === "register"
+          ? elAuthRegUser || elAuthRegPass
+          : elAuthLoginUser || elAuthLoginPass;
+      if (focusEl) focusEl.focus();
+    });
   }
 
   function closeAuthModal() {
@@ -4578,12 +4726,16 @@
       INVALID_INPUT: "Enter a valid username and password.",
       PASSWORD_TOO_SHORT: "Password must be at least 4 characters.",
       DATABASE_NOT_CONFIGURED: "Server database is not configured.",
+      USER_NOT_FOUND: "No account found for that username.",
+      WRONG_PASSWORD: "Incorrect password.",
       INVALID_CREDENTIALS: "Wrong username or password.",
       REGISTER_FAILED: "Could not register. If this persists, the database may be misconfigured.",
       INSERT_FAILED: "Could not save the account (database error).",
       DATABASE_POLICY: "Registration blocked by database security rules (check Supabase RLS on auth_users).",
       NETWORK: "Network error — check URL and connection.",
       BAD_RESPONSE: "Unexpected server response.",
+      HTTP_502: "API unreachable (bad gateway). Check the server is running.",
+      HTTP_503: "Service unavailable (database may be off on the server).",
     };
     return map[key] || (err ? String(err).replace(/_/g, " ") : "") || "Request failed";
   }
@@ -4598,57 +4750,103 @@
     if (elAuthShowLoginBtn) elAuthShowLoginBtn.addEventListener("click", () => openAuthModal("login"));
 
     async function postAuth(path, body) {
-      if (!API_BASE) {
-        if (elAuthStatus) elAuthStatus.textContent = "Set multiplayer-config.js to your server URL.";
+      const url = apiUrl(path);
+      if (isFileProtocolPage() && url.startsWith("/")) {
+        if (elAuthStatus) {
+          elAuthStatus.textContent =
+            "Open this game from your server (npm start → http://localhost:3000) or set MULTIPLAYER_SERVER_URL in multiplayer-config.js to your live API URL.";
+        }
         return null;
       }
       try {
-        const r = await fetch(`${API_BASE}${path}`, {
+        const r = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(body),
         });
         const text = await r.text();
+        let j = /** @type {{ ok?: boolean, error?: string, token?: string, username?: string }} */ ({});
         try {
-          return JSON.parse(text);
+          j = text ? JSON.parse(text) : {};
         } catch {
           if (elAuthStatus) elAuthStatus.textContent = r.ok ? "Unexpected server response." : `Server error (${r.status}).`;
           return { ok: false, error: "BAD_RESPONSE" };
         }
+        if (!r.ok) {
+          j.ok = false;
+          if (!j.error) {
+            if (r.status === 401) j.error = "INVALID_CREDENTIALS";
+            else if (r.status === 503) j.error = "DATABASE_NOT_CONFIGURED";
+            else if (r.status === 409) j.error = "USERNAME_TAKEN";
+            else if (r.status === 400) j.error = "INVALID_INPUT";
+            else j.error = `HTTP_${r.status}`;
+          }
+        } else if (j.token != null && j.ok !== false) {
+          j.ok = true;
+        }
+        return j;
       } catch (e) {
-        if (elAuthStatus) elAuthStatus.textContent = "Network error — check URL and connection.";
+        const msg = e && typeof e === "object" && "message" in e ? String(/** @type {{message?:string}} */ (e).message) : "";
+        const corsHint =
+          msg.includes("Failed to fetch") || msg.includes("NetworkError")
+            ? " (CORS: add your site to CORS_ORIGIN on the server, or use npm start on the same host.)"
+            : "";
+        if (elAuthStatus) elAuthStatus.textContent = `Network error${corsHint}`;
+        console.error("[auth] fetch failed", path, e);
         return { ok: false, error: "NETWORK" };
       }
     }
 
-    if (elAuthLoginBtn) {
-      elAuthLoginBtn.addEventListener("click", async () => {
-        const u = elAuthLoginUser && elAuthLoginUser.value.trim();
-        const p = elAuthLoginPass && elAuthLoginPass.value;
-        if (!u || !p) {
-          if (elAuthStatus) elAuthStatus.textContent = "Enter username and password.";
-          return;
-        }
+    async function doLogin() {
+      const rawU = String((elAuthLoginUser && elAuthLoginUser.value) || "").trim();
+      const u = rawU.toLowerCase();
+      const p = elAuthLoginPass ? String(elAuthLoginPass.value || "") : "";
+      if (!u || !p) {
+        if (elAuthStatus) elAuthStatus.textContent = "Enter username and password.";
+        return;
+      }
+      if (elAuthLoginBtn) {
+        elAuthLoginBtn.disabled = true;
+        elAuthLoginBtn.textContent = "Signing in…";
+      }
+      if (elAuthStatus) elAuthStatus.textContent = "";
+      try {
         const j = await postAuth("/api/auth/login", { username: u, password: p });
         if (j == null) return;
         if (j && j.ok && j.token) {
           localStorage.setItem(AUTH_TOKEN_KEY, j.token);
-          if (elAuthStatus) elAuthStatus.textContent = `Signed in as ${j.username}`;
+          if (elAuthStatus) elAuthStatus.textContent = `Signed in as ${j.username || u}`;
           closeAuthModal();
           showToast("Signed in — global leaderboard will sync.", 2400);
         } else {
           if (elAuthStatus) elAuthStatus.textContent = formatAuthError(j && j.error);
         }
-      });
-    }
-    if (elAuthRegisterBtn) {
-      elAuthRegisterBtn.addEventListener("click", async () => {
-        const u = elAuthRegUser && elAuthRegUser.value.trim();
-        const p = elAuthRegPass && elAuthRegPass.value;
-        if (!u || !p) {
-          if (elAuthStatus) elAuthStatus.textContent = "Enter username and password.";
-          return;
+      } catch (e) {
+        console.error("[auth] login", e);
+        if (elAuthStatus) elAuthStatus.textContent = "Something went wrong — try again.";
+      } finally {
+        if (elAuthLoginBtn) {
+          elAuthLoginBtn.disabled = false;
+          elAuthLoginBtn.textContent = "Sign in";
         }
+      }
+    }
+
+    async function doRegister() {
+      const rawU = String((elAuthRegUser && elAuthRegUser.value) || "").trim();
+      const u = rawU.toLowerCase();
+      const p = elAuthRegPass ? String(elAuthRegPass.value || "") : "";
+      if (!u || !p) {
+        if (elAuthStatus) elAuthStatus.textContent = "Enter username and password.";
+        return;
+      }
+      if (elAuthRegisterBtn) {
+        elAuthRegisterBtn.disabled = true;
+        elAuthRegisterBtn.textContent = "Creating…";
+      }
+      if (elAuthStatus) elAuthStatus.textContent = "";
+      try {
         const j = await postAuth("/api/auth/register", { username: u, password: p });
         if (j == null) return;
         if (j && j.ok && j.token) {
@@ -4659,6 +4857,30 @@
         } else {
           if (elAuthStatus) elAuthStatus.textContent = formatAuthError(j && j.error);
         }
+      } catch (e) {
+        console.error("[auth] register", e);
+        if (elAuthStatus) elAuthStatus.textContent = "Something went wrong — try again.";
+      } finally {
+        if (elAuthRegisterBtn) {
+          elAuthRegisterBtn.disabled = false;
+          elAuthRegisterBtn.textContent = "Register";
+        }
+      }
+    }
+
+    const formLogin = document.getElementById("authLoginForm");
+    if (formLogin) {
+      formLogin.addEventListener("submit", (e) => {
+        e.preventDefault();
+        void doLogin();
+      });
+    }
+
+    const formReg = document.getElementById("authRegisterForm");
+    if (formReg) {
+      formReg.addEventListener("submit", (e) => {
+        e.preventDefault();
+        void doRegister();
       });
     }
   }
@@ -4670,6 +4892,8 @@
   function frame(now) {
     const dt = clamp(now - lastFrame, 4, 32);
     lastFrame = now;
+
+    const docHidden = typeof document !== "undefined" && document.visibilityState === "hidden";
 
     updateToast(now);
     if (mode === "build") updateTimerPill(null);
@@ -4706,8 +4930,8 @@
       }
     }
 
-    if (mode === "play") updatePlay(dt, now);
-    render(now);
+    if (mode === "play" && !docHidden) updatePlay(dt, now);
+    if (!docHidden) render(now);
 
     input.tick();
     requestAnimationFrame(frame);

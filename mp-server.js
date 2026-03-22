@@ -20,7 +20,43 @@ const REMATCH_WAIT_MS = 45000;
 const BUILD_PLAY_ROUNDS = 4;
 const CHAT_MAX_LEN = 200;
 const CHAT_MIN_INTERVAL_MS = 400;
-const SPECTATE_THROTTLE_MS = 90;
+const SPECTATE_THROTTLE_MS = 100;
+const LEVEL_COLS = 30;
+const LEVEL_ROWS = 18;
+const SPAWN_SUPPORT_TYPES = new Set(["platform", "jumppad", "speedBoost"]);
+
+/**
+ * Server-side sanity check for submitted grids (source of truth for MP).
+ * @param {unknown[]} flat
+ */
+function validateSubmittedLevel(flat) {
+  if (!Array.isArray(flat) || flat.length !== LEVEL_COLS * LEVEL_ROWS) {
+    return { ok: false, message: "Invalid level data." };
+  }
+  let starts = 0;
+  let goals = 0;
+  let sx = 0;
+  let sy = 0;
+  for (let y = 0; y < LEVEL_ROWS; y++) {
+    for (let x = 0; x < LEVEL_COLS; x++) {
+      const t = flat[y * LEVEL_COLS + x];
+      if (t === "start") {
+        starts++;
+        sx = x;
+        sy = y;
+      }
+      if (t === "goal") goals++;
+    }
+  }
+  if (starts !== 1) return { ok: false, message: "Level must have exactly one Start." };
+  if (goals < 1) return { ok: false, message: "Level needs a Goal." };
+  if (sy >= LEVEL_ROWS - 1) return { ok: false, message: "Start must have solid support directly below." };
+  const below = flat[(sy + 1) * LEVEL_COLS + sx];
+  if (!SPAWN_SUPPORT_TYPES.has(below)) {
+    return { ok: false, message: "Start must stand on a platform, jump pad, or speed tile (not path block alone)." };
+  }
+  return { ok: true };
+}
 
 /**
  * @param {import("socket.io").Server} io
@@ -45,6 +81,7 @@ function initMultiplayer(io) {
    * @property {{0?:boolean,1?:boolean}} rematchVotes
    * @property {ReturnType<typeof setTimeout> | null} rematchTimer
    * @property {{0?: object, 1?: object}} finalResults
+   * @property {boolean} playRunResolved
    */
 
   /** @type {Map<string, Match>} */
@@ -95,6 +132,7 @@ function initMultiplayer(io) {
    */
   function startBuildPhase(m) {
     m.phase = "build";
+    m.playRunResolved = false;
     const b = m.builderIdx;
     const p = 1 - b;
     const sB = io.sockets.sockets.get(m.socketIds[b]);
@@ -125,6 +163,7 @@ function initMultiplayer(io) {
    */
   function startPlayPhase(m, tilesFlat) {
     m.phase = "play";
+    m.playRunResolved = false;
     m.playRunSeed = (Math.floor(Math.random() * 0xffffffff) ^ Date.now()) >>> 0;
     const b = m.builderIdx;
     const p = 1 - b;
@@ -280,6 +319,7 @@ function initMultiplayer(io) {
           rematchVotes: {},
           rematchTimer: null,
           finalResults: undefined,
+          playRunResolved: false,
         };
         matches.set(m.id, m);
         socketToMatch.set(a.socketId, m.id);
@@ -318,8 +358,9 @@ function initMultiplayer(io) {
       if (idx !== m.builderIdx) return;
       if (m.round > BUILD_PLAY_ROUNDS) return;
       const tilesFlat = payload && payload.tilesFlat;
-      if (!Array.isArray(tilesFlat) || tilesFlat.length !== 30 * 18) {
-        socket.emit("mp:error", { message: "Invalid level data." });
+      const v = validateSubmittedLevel(tilesFlat);
+      if (!v.ok) {
+        socket.emit("mp:error", { message: v.message || "Invalid level data." });
         return;
       }
       startPlayPhase(m, tilesFlat);
@@ -380,9 +421,12 @@ function initMultiplayer(io) {
       const mid = socketToMatch.get(socket.id);
       if (!mid) return;
       const m = matches.get(mid);
-      if (!m || m.phase !== "play") return;
+      if (!m || m.phase !== "play" || m.playRunResolved) return;
       const idx = m.socketIds.indexOf(socket.id);
       const outcome = payload && payload.outcome === "win" ? "win" : "lose";
+      const runnerIdx = 1 - m.builderIdx;
+      if (idx !== runnerIdx) return;
+      m.playRunResolved = true;
       applyBuildPlayScore(m, outcome, idx);
       broadcastScores(m);
       advanceAfterBuildPlayRound(m);
@@ -395,6 +439,7 @@ function initMultiplayer(io) {
       if (!m || m.phase !== "final" || !m.finalResults) return;
       const idx = /** @type {0|1} */ (m.socketIds.indexOf(socket.id));
       if (idx !== 0 && idx !== 1) return;
+      if (m.finalResults[idx] != null) return;
       const outcome = payload && payload.outcome === "win" ? "win" : "lose";
       const timeMs = Math.max(0, Math.min(300000, Number(payload && payload.timeMs) || 0));
 
@@ -457,6 +502,7 @@ function initMultiplayer(io) {
         m.builderIdx = 0;
         m.finalLevelId = null;
         m.playRunSeed = null;
+        m.playRunResolved = false;
         m.finalResults = undefined;
         m.lastChatAt = {};
         m.lastSpectateAt = {};

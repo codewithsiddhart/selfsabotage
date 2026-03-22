@@ -45,9 +45,9 @@ async function loginHandler(req, res) {
   if (!username || !password) return res.status(400).json({ ok: false, error: "INVALID_INPUT" });
 
   const row = await findAuthUserByUsername(username);
-  if (!row || !row.password_hash) return res.status(401).json({ ok: false, error: "INVALID_CREDENTIALS" });
+  if (!row || !row.password_hash) return res.status(401).json({ ok: false, error: "USER_NOT_FOUND" });
   const ok = await bcrypt.compare(password, row.password_hash);
-  if (!ok) return res.status(401).json({ ok: false, error: "INVALID_CREDENTIALS" });
+  if (!ok) return res.status(401).json({ ok: false, error: "WRONG_PASSWORD" });
 
   const token = signAuthToken({ sub: row.id, u: row.username });
   return res.json({ ok: true, token, username: row.username });
