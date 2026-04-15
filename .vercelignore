@@ -1,0 +1,10 @@
+# Vercel: deploy only static game files. Full repo (with package.json) still on Git for Render.
+# Ignoring package.json stops Vercel from treating this repo as a Node/Express app (which can
+# break loading or cause odd timeouts). Render ignores this file and uses the full repo.
+package.json
+package-lock.json
+node_modules
+server
+server.js
+.env
+.env.*
