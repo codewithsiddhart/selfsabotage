@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: self-sabotage-builder
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_STATIC
+        value: "true"

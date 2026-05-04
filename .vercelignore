@@ -1,0 +1,9 @@
+# PERF 5: Exclude dev/setup files from production deployment bundle
+supabase/leaderboard_setup.sql
+supabase/
+*.sql
+Death Note Opening 1 - The World_default.mp3
+Dr. Stone Opening 2 - Sangenshoku_tv.mp3
+Shingeki no Kyojin Opening 1 - Feuerroter Pfeil und Bogen_default.mp3
+Vinland Saga Opening 1 - MUKANJYO_tv.mp3
+README.md

@@ -1,0 +1,884 @@
+<!doctype html>
+<!--
+  © 2026 NeuroGlitch. All Rights Reserved.
+  NeuroGlitch is an independent game development and software initiative.
+  Self-Sabotage Builder: intellectual property of NeuroGlitch.
+  Founders: Siddharth (Discord: perfect_humann), Harshit (Discord: mehuman123).
+  All rights reserved. Unauthorized copying, redistribution, or reproduction is strictly prohibited.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Self-Sabotage Builder | NeuroGlitch</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Device mode: show on first visit -->
+    <div id="deviceModal" class="modal deviceModal hidden" role="dialog" aria-label="Choose your device">
+      <div class="modalHeader">
+        <div class="modalTitle">How are you playing?</div>
+      </div>
+      <div class="modalBody">
+        <div class="deviceOptions">
+          <button id="deviceDesktopBtn" class="btn primary deviceBtn" type="button">
+            <span class="deviceIcon">🖥️</span>
+            <span>Desktop</span>
+            <span class="smallNote">Keyboard (WASD / Arrows)</span>
+          </button>
+          <button id="deviceMobileBtn" class="btn deviceBtn" type="button">
+            <span class="deviceIcon">📱</span>
+            <span>Mobile</span>
+            <span class="smallNote">Touch controls</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Touch controls (visible only in mobile mode when playing) -->
+    <div id="touchControls" class="touchControls hidden" aria-hidden="true">
+      <div class="touchCluster" role="group" aria-label="Move">
+        <button id="touchLeft" class="touchBtn touchLeft" type="button" aria-label="Move left">◀</button>
+        <button id="touchRight" class="touchBtn touchRight" type="button" aria-label="Move right">▶</button>
+      </div>
+      <button id="touchJump" class="touchBtn touchJump" type="button" aria-label="Jump">Jump</button>
+    </div>
+
+    <!-- Exit to menu (top-left, play + build) -->
+    <button id="exitToMenuBtn" class="exitToMenuBtn hidden" type="button" aria-label="Exit to menu">✕ Menu</button>
+
+    <button type="button" id="mobileExitBuildBtn" class="mobileExitBuildBtn hidden" aria-label="Exit build mode">Exit build</button>
+
+    <!-- Portrait-mode overlay: shown on narrow portrait screens in touch mode -->
+    <div id="portraitOverlay" class="portraitOverlay hidden" role="status" aria-live="polite">
+      <div class="portraitOverlayCard">
+        <div class="portraitOverlayIcon">📱</div>
+        <div class="portraitOverlayTitle">Rotate your device</div>
+        <div class="portraitOverlayText">Self-Sabotage Builder plays best in landscape mode.</div>
+        <button type="button" class="btn" id="portraitOverlayDismiss" style="margin-top:14px;min-height:44px;width:100%;">Play anyway</button>
+      </div>
+    </div>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="title">Self-Sabotage Builder</div>
+          <div class="subtitle">Build your own level, then beat the booby-traps you didn’t mean to make.</div>
+        </div>
+
+        <div class="topActions">
+          <!-- Primary actions always visible -->
+          <div class="profileChip" id="profileChip" role="button" tabindex="0" aria-label="Open player profile">
+            <div class="dot"></div>
+            <div class="stack">
+              <div class="smallLabel">Player</div>
+              <div id="activePlayerName" class="chipName">—</div>
+              <div id="activePlayerSub" class="chipSub hidden" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="mode">
+            <button id="buildModeBtn" class="btn primary" type="button">Build</button>
+            <button id="playModeBtn" class="btn" type="button">Play</button>
+          </div>
+
+          <button id="restartBtn" class="btn topbarSecondary" type="button" disabled>Restart</button>
+
+          <!-- Hamburger button — visible only on narrow screens -->
+          <button id="topbarMenuBtn" class="btn topbarHamburger" type="button" aria-label="More options" aria-expanded="false" aria-controls="topbarDrawer">☰</button>
+
+          <!-- Secondary actions: hidden behind hamburger on mobile -->
+          <div id="topbarDrawer" class="topbarDrawer" role="group" aria-label="Additional actions">
+            <div class="accountTopGroup" role="group" aria-label="Online account">
+              <button type="button" id="authRegisterTopBtn" class="btn subtle accountTopBtn">Sign up</button>
+              <button type="button" id="authAccountBtn" class="btn subtle accountTopBtn" title="Sign in to sync global leaderboard">Log in</button>
+              <button type="button" id="authLogoutTopBtn" class="btn subtle accountTopBtn hidden" title="Log out of online account">Log out</button>
+            </div>
+            <button id="openLevelsBtn" class="btn" type="button">Levels</button>
+            <button id="openLeaderboardBtn" class="btn" type="button">Leaderboard</button>
+            <button id="openMultiplayerBtn" class="btn subtle" type="button">Multiplayer</button>
+            <button id="openSettingsBtn" class="btn" type="button">Settings</button>
+            <button id="openReportModalBtn" class="btn danger" type="button">Report</button>
+            <button id="openAdminBtn" class="btn hidden" type="button">Admin</button>
+            <button id="openModBtn" class="btn hidden" type="button">Mod</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="main">
+        <aside class="panel">
+          <div class="panelTitleRow">
+            <div class="panelTitle">Build Tools</div>
+            <div id="budgetPill" class="pill subtle" title="Placement limits">0/0</div>
+          </div>
+          <div class="row" style="flex-wrap: wrap; gap: 8px; margin-bottom: 10px">
+            <button id="copyRegionBtn" type="button" class="btn subtle">Copy region</button>
+            <button id="pasteRegionBtn" type="button" class="btn subtle">Paste at cursor</button>
+            <button id="addTextBtn" type="button" class="btn subtle">Add text</button>
+            <button id="togglePuzzleLinksBtn" type="button" class="btn subtle">Puzzle links: ON</button>
+          </div>
+
+          <div id="palette" class="palette" aria-label="Tile palette"></div>
+
+          <div class="miniStats">
+            <div class="stat">
+              <div class="k">Difficulty</div>
+              <div id="difficultyValue" class="v">0.0</div>
+            </div>
+            <div class="stat">
+              <div class="k">Validation</div>
+              <div id="validationValue" class="v warn">Needs Start + Goal + platform under Start</div>
+            </div>
+          </div>
+
+          <div class="panelActions">
+            <button id="saveLevelBtn" class="btn primary" type="button">Save Level</button>
+            <button id="clearBtn" class="btn danger" type="button">Clear Grid</button>
+          </div>
+
+          <div class="help">
+            <div class="helpTitle">Controls</div>
+            <ul>
+              <li><b>Move</b>: WASD or Arrow keys</li>
+              <li><b>Jump</b>: W / Up / Space</li>
+              <li><b>Build</b>: left click place, right click erase (drag to erase smoothly)</li>
+              <li><b>Undo / redo</b>: Ctrl+Z · Ctrl+Y or Ctrl+Shift+Z</li>
+              <li><b>Copy region</b>: Alt-drag to select, then Ctrl+C or Copy region · Ctrl+V or Paste at cursor</li>
+              <li><b>Labels</b>: Add text, then click a cell (saved with level JSON)</li>
+              <li><b>Test spawn</b>: Shift+click a solid tile — Play starts there (your editor level only)</li>
+              <li><b>Pan map</b>: mouse wheel, middle-drag, or arrow keys (build mode); two-finger drag on touch</li>
+            </ul>
+            <div class="helpTitle">Core rule</div>
+            <div class="helpText">
+              Build mode hides sabotage. When you hit <b>Play</b>, every placed tile “activates” a secret behavior for
+              this run. Place <b>exactly one Checkpoint</b> — touch it in play for <b>one revive per run</b>; the next lethal hit ends the run.
+            </div>
+          </div>
+        </aside>
+
+        <section class="stageWrap">
+          <div class="hud">
+            <div id="statusPill" class="pill">Loading…</div>
+            <div id="timerPill" class="pill timerPill hidden">2:00</div>
+            <div id="pbPacePill" class="pill pbPacePill hidden" aria-live="polite" title="Compared to your best clear time on this level">PB pace</div>
+            <div id="mpHud" class="mpHud hidden" aria-live="polite">
+              <div class="mpHudTop">
+                <span id="mpHudRound" class="mpHudBit">Round —</span>
+                <span id="mpHudRole" class="mpHudBit">—</span>
+              </div>
+              <div id="mpHudScore" class="mpHudScore">You 0 · Opp 0</div>
+            </div>
+            <div class="pill subtle">
+              <span id="runHint">Build carefully.</span>
+            </div>
+          </div>
+
+          <canvas id="game" width="960" height="576" aria-label="Game canvas" style="width:100%;height:auto;"></canvas>
+          <div id="endOverlay" class="endOverlay hidden" aria-hidden="true">
+            <div class="endOverlayContent">
+              <div id="endOverlayMessage" class="endOverlayMessage"></div>
+              <div id="endOverlayStats" class="endOverlayStats"></div>
+              <div class="endOverlayActions">
+                <button id="endRetryBtn" class="btn primary" type="button">Retry</button>
+                <button id="endNextLevelBtn" class="btn" type="button">Next level</button>
+                <button id="endBuildBtn" class="btn" type="button">Build mode</button>
+              </div>
+            </div>
+          </div>
+          <div id="toast" class="toast" role="status" aria-live="polite"></div>
+        </section>
+
+        <aside class="panel rightSidebar" id="rightSidebar">
+          <div class="panelTitleRow">
+            <div class="panelTitle">Player Hub</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div class="pill subtle coinsCounterPill">Coins: <b id="rightCoinsValue">0</b></div>
+              <button type="button" id="sidebarCollapseBtn" class="iconBtn sidebarCollapseBtn" title="Collapse sidebar" aria-label="Collapse sidebar">◀</button>
+            </div>
+          </div>
+          <div class="rightSidebarTabs" role="tablist" aria-label="Right sidebar tabs">
+            <button type="button" class="btn primary rightTabBtn active" id="rightTabCoinsBtn" data-right-tab="coins">Coins</button>
+            <button type="button" class="btn rightTabBtn" id="rightTabCustomizationBtn" data-right-tab="customization">Customization</button>
+          </div>
+          <div id="rightTabCoins" class="rightTabBody">
+            <div class="card">
+              <div class="cardTitle">What are coins?</div>
+              <div class="helpText">
+                Coins are your cosmetic currency. You earn them by beating daily challenges and preconfigured built-in levels.
+              </div>
+              <div class="smallNote">Use coins in customization to buy and equip ghost avatars (cosmetic only).</div>
+            </div>
+          </div>
+          <div id="rightTabCustomization" class="rightTabBody hidden">
+            <div class="card">
+              <div class="cardTitle">Intensity unlock</div>
+              <div class="helpText">Unlock the sabotage intensity slider for your own levels (500 coins while signed in).</div>
+              <div id="rightIntensityLockPill" class="pill subtle intensityLockPill" style="margin-top:8px">Intensity locked</div>
+              <p id="rightBuyIntensityNote" class="helpText smallNote intensityBuyNote">Sign in to purchase.</p>
+              <button type="button" id="rightBuyIntensityUnlockBtn" class="btn primary intensityBuyBtn" style="margin-top:8px">
+                Unlock intensity (500 coins)
+              </button>
+            </div>
+            <div class="card" style="margin-top:10px">
+              <div class="cardTitle">Character customization</div>
+              <div class="helpText">
+                Choose the simple default ghost or a bought skin. Equipped skins show with a <b>green</b> ring on your profile.
+              </div>
+              <div class="row" style="margin-top:10px">
+                <button id="openCustomizationWindowBtn" class="btn primary" type="button">Open customization</button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="footer">
+        <div class="footerLinksBox" aria-label="NeuroGlitch links">
+          <div class="footerLinksTitle">From NeuroGlitch</div>
+          <p class="footerLinksText">
+            Explore our main hub and upcoming project drops.
+          </p>
+          <a class="footerPrimaryLink" href="https://www.neuroGlitch.com" target="_blank" rel="noopener noreferrer">www.neuroGlitch.com</a>
+        </div>
+        <div class="fineprint">
+          Offline-friendly. Progress is saved locally per player. Sabotage is seeded per run: unpredictable, but not
+          unfairly random mid-run.
+        </div>
+        <div class="copyright">© 2026 NeuroGlitch. All Rights Reserved. Self-Sabotage Builder by NeuroGlitch
+        </div>
+        <div class="copyright">Contact: Discord — perfect_humann, mehuman123</div>
+      </footer>
+    </div>
+
+    <!-- Start / Profile Modal -->
+    <div id="modalBackdrop" class="backdrop hidden" aria-hidden="true"></div>
+
+    <div id="startModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Start screen">
+      <div class="modalHeader">
+        <div class="modalTitle">Welcome</div>
+        <button id="closeStartModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Choose a player</div>
+          <div class="row">
+            <input id="playerSearchInput" class="input" placeholder="Search player name…" autocomplete="off" />
+            <button id="playerSearchBtn" class="btn" type="button">Search</button>
+          </div>
+          <div id="playerList" class="list" aria-label="Player list"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Create new player</div>
+          <div class="row">
+            <input id="newPlayerInput" class="input" placeholder="Enter a username…" maxlength="18" autocomplete="off" />
+            <button id="createPlayerBtn" class="btn primary" type="button">Create</button>
+          </div>
+          <div class="smallNote">Local only. Stored in your browser.</div>
+        </div>
+
+        <div id="tutorialOfferCard" class="card hidden">
+          <div class="cardTitle">New? Optional tutorial</div>
+          <div class="helpText">
+            Five short levels introduce <b>spikes</b>, <b>jump pads</b>, <b>hex</b>, <b>lava</b>, and <b>platforms</b> with gentler sabotage. You can skip anytime.
+          </div>
+          <div class="row" style="margin-top: 10px; flex-wrap: wrap; gap: 8px">
+            <button id="tutorialStartBtn" type="button" class="btn primary">Start tutorial</button>
+            <button id="tutorialSkipBtn" type="button" class="btn subtle">Skip</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Quick instructions</div>
+          <div class="helpText">
+            Build a path from <b>Start</b> to <b>Goal</b>. In play mode, tiles may crumble, flicker, misfire, or even
+            curse your controls all this are a part of the game.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Optional challenges (this run)</div>
+          <label class="toggleRow" style="margin-bottom: 8px">
+            <span>No double-jump (if you have the powerup)</span>
+            <input id="challengeNoDoubleJump" type="checkbox" />
+          </label>
+          <div class="row" style="align-items: center; gap: 10px; flex-wrap: wrap">
+            <label class="helpText" for="challengeMaxDeaths">Death budget (checkpoint respawns count)</label>
+            <select id="challengeMaxDeaths" class="input" aria-label="Death budget for medals">
+              <option value="0">Off</option>
+              <option value="3">≤3 for medal</option>
+              <option value="5">≤5 for medal</option>
+              <option value="8">≤8 for medal</option>
+            </select>
+          </div>
+          <div class="smallNote">Medals show on the win screen when you satisfy these (for fun — you still win either way).</div>
+        </div>
+
+        <div id="startModalPowerupCard" class="card">
+          <div class="cardTitle">Powerups (preconfigured levels only)</div>
+          <div id="powerupSlots" class="powerupSlots">
+            <div class="powerupSlot" data-powerup="doubleJump" title="Double Jump: extra mid-air jump once per run on built-in levels.">
+              <span class="powerupIcon">⬆️⬆️</span>
+              <span class="powerupName">Double Jump</span>
+              <span id="powerupCountDoubleJump" class="powerupCount">0</span>
+              <button type="button" class="btn btnSmall usePowerupBtn" data-powerup="doubleJump">Use</button>
+            </div>
+            <div class="powerupSlot" data-powerup="speedBoost" title="Speed Boost: faster move speed for several seconds at level start.">
+              <span class="powerupIcon">⚡</span>
+              <span class="powerupName">Speed Boost</span>
+              <span id="powerupCountSpeedBoost" class="powerupCount">0</span>
+              <button type="button" class="btn btnSmall usePowerupBtn" data-powerup="speedBoost">Use</button>
+            </div>
+            <div class="powerupSlot" data-powerup="protection" title="Protection: blocks one lethal hit (spikes, lava, hex, or hammer).">
+              <span class="powerupIcon">🛡️</span>
+              <span class="powerupName">Protection</span>
+              <span id="powerupCountProtection" class="powerupCount">0</span>
+              <button type="button" class="btn btnSmall usePowerupBtn" data-powerup="protection">Use</button>
+            </div>
+          </div>
+          <div class="smallNote">Use before starting a built-in level. Earned randomly after winning Medium/Hard.</div>
+        </div>
+        <div id="startModalLevelPickCard" class="card">
+          <div class="cardTitle">Level selection</div>
+          <div class="levelTabs">
+            <button type="button" class="levelTab active" data-tier="easy">Easy</button>
+            <button type="button" class="levelTab" data-tier="medium">Medium</button>
+            <button type="button" class="levelTab" data-tier="hard">Hard</button>
+            <button type="button" class="levelTab" data-tier="tutorial">Tutorial</button>
+          </div>
+          <div id="levelListByTier" class="levelListByTier"></div>
+
+          <div class="row" style="margin-top:10px; flex-wrap:wrap; gap:8px">
+            <button id="dailyChallengeBtn" class="btn primary" type="button">Daily challenge</button>
+            <span id="dailyChallengeStatus" class="pill subtle" style="padding:6px 10px">—</span>
+          </div>
+          <div class="smallNote" id="dailyChallengeHint" style="margin-top:6px">Hard daily level. 200 coins on successful completion (once per day).</div>
+
+          <div class="smallNote">Built-in levels have a timer; the HUD shows <b>PB pace</b> vs your saved best clear. Powerups only work in built-in levels.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminPublishLevelModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Where to publish this level" aria-hidden="true">
+      <div class="modalHeader">
+        <div class="modalTitle">Publish this level (admin)</div>
+        <button id="closeAdminPublishModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <p class="helpText" style="margin-bottom: 12px">
+          <b>Easy / Medium / Hard</b> puts the level only in the start-screen preconfigured tabs (players won’t see it under Global shared levels).<br />
+          <b>Global community</b> lists it for everyone in Global shared levels only.
+        </p>
+        <div class="row" style="flex-wrap: wrap; gap: 8px">
+          <button type="button" class="btn primary" data-admin-publish="easy">Easy tab</button>
+          <button type="button" class="btn primary" data-admin-publish="medium">Medium tab</button>
+          <button type="button" class="btn primary" data-admin-publish="hard">Hard tab</button>
+          <button type="button" class="btn" data-admin-publish="global">Global community list</button>
+          <button type="button" class="btn subtle" data-admin-publish="local_only">This browser only (no cloud)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Levels Modal -->
+    <div id="levelsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Level manager">
+      <div class="modalHeader">
+        <div class="modalTitle">Levels</div>
+        <button id="closeLevelsModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div id="featuredLevelsHost" class="featuredLevelsHost"></div>
+        <div class="row" style="flex-wrap: wrap; gap: 8px; margin-bottom: 10px">
+          <button id="exportLevelBtn" type="button" class="btn">Export JSON</button>
+          <button id="importLevelBtn" type="button" class="btn subtle">Import JSON</button>
+          <input id="importLevelInput" type="file" accept="application/json,.json" class="hidden" aria-hidden="true" />
+          <button id="restoreDraftBtn" type="button" class="btn">Restore draft</button>
+        </div>
+        <div class="smallNote">Export copies full-grid JSON to the clipboard. Import replaces the current editor level. Draft auto-saves while you build.</div>
+        <div class="row">
+          <input id="saveLevelNameInput" class="input" placeholder="Level name…" maxlength="26" autocomplete="off" />
+          <button id="confirmSaveLevelBtn" class="btn primary" type="button">Save</button>
+        </div>
+        <div class="smallNote">Tip: saving snapshots the current grid.</div>
+        <div id="levelsList" class="list" aria-label="Saved levels list"></div>
+
+        <div class="cardTitle" style="margin-top:14px">Global shared levels</div>
+        <div class="row" style="flex-wrap:wrap; gap:8px; margin-top:8px; margin-bottom:6px">
+          <button id="refreshGlobalLevelsBtn" type="button" class="btn subtle">Refresh</button>
+        </div>
+        <div id="globalLevelsList" class="list" aria-label="Global levels list"></div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Modal -->
+    <div id="leaderboardModal" class="modal leaderboardModalWide hidden" role="dialog" aria-modal="true" aria-label="Leaderboard">
+      <div class="modalHeader">
+        <div class="modalTitle">Leaderboard</div>
+        <button id="closeLeaderboardModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card globalLbCard">
+          <div class="cardTitle">Global leaderboard</div>
+          <p class="smallNote" id="globalLbHint">Sign in for an account. Global scores load from Supabase.</p>
+
+          <div class="globalLbLookup">
+            <div class="globalLbLookupHead">
+              <span class="globalLbSectionLabel">Find a player</span>
+              <p class="globalLbLookupHint smallNote">Search by display name, profile name, or paste a full user UUID.</p>
+            </div>
+            <div class="row globalLbSearchRow">
+              <input
+                id="globalLbSearchInput"
+                class="input globalLbSearchInput"
+                type="search"
+                placeholder="Search name or user ID…"
+                maxlength="80"
+                autocomplete="off"
+                aria-label="Search global players"
+              />
+              <button id="globalLbSearchBtn" class="btn primary" type="button">Search</button>
+              <button id="globalLbSearchClearBtn" class="btn subtle" type="button">Clear</button>
+            </div>
+            <p class="smallNote globalLbSearchStatus" id="globalLbSearchStatus" aria-live="polite"></p>
+            <div id="globalLbSearchResults" class="globalLbSearchResults" aria-label="Search results"></div>
+          </div>
+
+          <div class="globalLbTopSection">
+            <span class="globalLbSectionLabel">Top players</span>
+            <p class="smallNote globalLbTopHint">Ranked by total score. Stats are shown in separate blocks for each player.</p>
+            <div class="globalLbTopScroll">
+              <div id="globalLeaderboardList" class="globalLbTopList" aria-label="Top global rankings"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Local leaderboard</div>
+        <p class="smallNote" id="localLbHint">Ranks by total points earned in this browser. Search filters the list.</p>
+        <div class="row">
+          <input id="leaderboardSearchInput" class="input" placeholder="Search player…" autocomplete="off" />
+          <button id="leaderboardSearchBtn" class="btn" type="button">Search</button>
+        </div>
+        <div class="localLbTable" role="table" aria-label="Local leaderboard">
+          <div class="localLbHead" role="row">
+            <span class="localLbCell localLbRank" role="columnheader">#</span>
+            <span class="localLbCell localLbName" role="columnheader">Player</span>
+            <span class="localLbCell localLbPoints" role="columnheader">Points</span>
+            <span class="localLbCell localLbStats" role="columnheader">Record</span>
+            <span class="localLbCell localLbAction" role="columnheader"> </span>
+          </div>
+          <div id="leaderboardList" class="localLbBody" aria-label="Leaderboard list"></div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="modalHeader">
+        <div class="modalTitle">Settings</div>
+        <button id="closeSettingsModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card settingsAppearanceCard">
+          <div class="cardTitle">Appearance</div>
+          <div class="row" style="margin-bottom:8px">
+            <label class="helpText" for="themeSelect" style="min-width:100px; font-weight:900">Theme</label>
+            <select id="themeSelect" class="input" aria-label="Visual theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="forest">Green Forest</option>
+              <option value="indian">Rajasthani Vibes</option>
+              <option value="cute">Cute Garden</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="helpText" for="backgroundSelect" style="min-width:100px; font-weight:900">Background</label>
+            <select id="backgroundSelect" class="input" aria-label="Background">
+              <option value="scene">Immersive scene (image + fallback)</option>
+              <option value="nebula">Nebula (layered)</option>
+              <option value="grid">Retro Grid</option>
+              <option value="dusk">Dusk Sky</option>
+              <option value="forest">Forest Mist</option>
+              <option value="indian">Indian Night</option>
+              <option value="cuteFlowers">Pink Garden (soft)</option>
+              <option value="city">City Night</option>
+            </select>
+          </div>
+          <button type="button" id="settingsSecretSparkleBtn" class="settingsSecretSparkleBtn" aria-label="A little surprise" title="Shh…">✨</button>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Sound</div>
+          <label class="toggleRow">
+            <span>Enable audio (SFX + ambient)</span>
+            <input id="soundToggle" type="checkbox" />
+          </label>
+          <div class="row" style="margin-top:10px">
+            <label class="helpText" for="volumeSlider" style="min-width:100px; font-weight:900">Volume</label>
+            <input id="volumeSlider" type="range" min="0" max="100" value="70" />
+            <span id="volumeValue" class="pill subtle">70%</span>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <label class="helpText" for="ambientNoiseSelect" style="min-width:100px; font-weight:900">Ambient</label>
+            <select id="ambientNoiseSelect" class="input" aria-label="Ambient noise">
+              <option value="off">Off</option>
+              <option value="white">White noise</option>
+              <option value="pink">Pink noise</option>
+              <option value="brown">Brown noise</option>
+            </select>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <label class="helpText" for="musicTrackSelect" style="min-width:100px; font-weight:900">Music</label>
+            <select id="musicTrackSelect" class="input" aria-label="Looping soundtrack"></select>
+          </div>
+          <div class="smallNote">
+            Procedural SFX plus optional ambient noise. <b>Music</b> uses your bundled MP3 files in the game folder (loops). Click the canvas once if the browser blocks audio.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Debug</div>
+          <label class="toggleRow">
+            <span>Show hitboxes &amp; path debug</span>
+            <input id="debugOverlayToggle" type="checkbox" />
+          </label>
+          <div class="smallNote">Play mode: player &amp; tile hitboxes, jump-range box. Build mode: last reachability BFS cells (teal).</div>
+          <div class="row" style="margin-top: 10px; flex-wrap: wrap; gap: 8px">
+            <button type="button" id="lbTestSupabaseBtn" class="btn subtle">
+              Test global leaderboard (Supabase)
+            </button>
+          </div>
+          <div class="smallNote">
+            Inserts a test score (if signed in) and refreshes the list. Open DevTools (F12) → Console for <code>[SSB Supabase]</code> logs.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Sabotage</div>
+          <div class="row">
+            <label class="helpText" for="sabotageSlider" style="min-width:120px; font-weight:900">Intensity</label>
+            <input id="sabotageSlider" type="range" min="1" max="10" step="1" />
+            <div id="sabotageValue" class="pill subtle" style="padding:6px 10px">5</div>
+          </div>
+          <div class="smallNote">1 = gentle betrayals, 10 = chaos (still seeded per run). After you unlock below, the slider applies on <b>your own</b> editor levels only (not built-in or daily).</div>
+          <div class="intensityUnlockBlock">
+            <div id="intensityLockPill" class="pill subtle intensityLockPill">Intensity locked</div>
+            <p id="buyIntensityNote" class="helpText smallNote intensityBuyNote">Unlock intensity for 500 coins (requires sign-in).</p>
+            <button type="button" id="buyIntensityUnlockBtn" class="btn primary intensityBuyBtn">Unlock intensity (500 coins)</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Keybinds</div>
+          <div id="keybindList" class="list" aria-label="Keybind list"></div>
+          <div class="smallNote">
+            Tip: click <b>Change</b>, then press a key. Restart is especially useful mid-run.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Rules & Tips</div>
+          <div class="helpText">
+            - Your <b>difficulty score</b> is based on placed tiles (platform 1, spike 2, jump pad 1.5, hex 2.5).<br />
+            - Beating higher difficulty levels grants a bonus multiplier to points earned.<br />
+            - The leaderboard is <b>local</b> to this browser only (per your players).<br />
+            - Sabotage is consistent per run: it won’t “reroll” mid-run, but it can trigger on timers.
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Report issue</div>
+          <div class="helpText" style="margin-bottom:10px;">Use the <b>Report</b> button in the top bar to file a report about cheaters, bugs, or other issues.</div>
+          <button type="button" class="btn danger" id="settingsOpenReportBtn" style="width:100%;min-height:42px;">Open Report Form</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="reportModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Report issue">
+      <div class="modalHeader">
+        <div class="modalTitle">Report Issue</div>
+        <button id="closeReportModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Tell admins what happened</div>
+          <div class="row">
+            <select id="quickIssueTypeSelect" class="input" aria-label="Issue type">
+              <option value="cheater">Cheater / unfair behavior</option>
+              <option value="lag">Lag / performance</option>
+              <option value="glitch">Glitch / bug</option>
+              <option value="other">Other</option>
+            </select>
+            <input id="quickIssueTargetUserInput" class="input" placeholder="Player/User ID (optional)" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="row" style="margin-top: 8px">
+            <textarea id="quickIssueDetailsInput" class="input" rows="4" maxlength="500" placeholder="What happened? Steps to reproduce help a lot."></textarea>
+          </div>
+          <div class="row" style="margin-top: 8px">
+            <button id="quickSubmitIssueReportBtn" class="btn primary" type="button">Send Report</button>
+          </div>
+          <div class="smallNote">This goes to admin inbox in-game. If not signed in, report still sends as anonymous.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="multiplayerModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Multiplayer">
+      <div class="modalHeader">
+        <div class="modalTitle">Multiplayer</div>
+        <button id="closeMultiplayerModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Room</div>
+          <p id="mpHelpText" class="helpText smallNote">
+            Use the game server from this project (<code>npm start</code>) so the page and WebSocket share the same origin. For a static host, set
+            <code>window.SSB_MULTIPLAYER_URL</code> in multiplayer-config.js to your server URL.
+          </p>
+          <p id="mpStatusText" class="pill subtle mpStatusPill">Offline</p>
+          <div class="row" style="flex-wrap: wrap; gap: 8px; margin-top: 10px">
+            <button type="button" id="mpHostBtn" class="btn primary">Create room</button>
+            <button type="button" id="mpRandomBtn" class="btn">Find random 1v1</button>
+            <button type="button" id="mpStartMatchBtn" class="btn subtle">Start 5-round match (host)</button>
+            <button type="button" id="mpLeaveBtn" class="btn danger" disabled>Leave</button>
+          </div>
+          <div class="row" style="margin-top: 10px">
+            <input id="mpJoinInput" class="input" placeholder="Room code" maxlength="6" autocomplete="off" aria-label="Room code" />
+            <button type="button" id="mpJoinBtn" class="btn">Join</button>
+          </div>
+          <div class="row mpRoomRow" style="margin-top: 10px; align-items: center">
+            <span class="helpText">Code</span>
+            <code id="mpRoomCodeDisplay" class="mpRoomCode">—</code>
+            <button type="button" id="mpCopyRoomBtn" class="btn subtle" disabled>Copy</button>
+          </div>
+          <button type="button" id="mpShareLevelBtn" class="btn" disabled>Push editor level to room (host)</button>
+          <p class="smallNote" style="margin-top: 8px">
+            Ghosts show other players in <b>Play</b>. Press <b>Restart</b> while the host is in the room to sync sabotage seeds for the same traps.
+          </p>
+          <p class="smallNote" style="margin-top: 8px">
+            Match mode: 5 rounds total. Round 5 is a random preconfigured level.
+          </p>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Chat</div>
+          <div id="mpChatLog" class="mpChatLog" aria-label="Chat log"></div>
+          <div class="row" style="margin-top: 8px">
+            <input id="mpChatInput" class="input" placeholder="Message…" maxlength="200" autocomplete="off" />
+            <button type="button" id="mpChatSendBtn" class="btn primary">Send</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Local multiplayer (same device)</div>
+          <div class="helpText">Pass-and-play race mode. Player A and Player B take turns on the same level; each win adds 1 point.</div>
+          <div class="row" style="margin-top:8px">
+            <input id="localMpPlayerAInput" class="input" placeholder="Player A name" maxlength="18" autocomplete="off" />
+            <input id="localMpPlayerBInput" class="input" placeholder="Player B name" maxlength="18" autocomplete="off" />
+          </div>
+          <div class="row" style="margin-top:8px; flex-wrap:wrap; gap:8px">
+            <button type="button" id="localMpStartBtn" class="btn primary">Start local match</button>
+            <button type="button" id="localMpStopBtn" class="btn danger">Stop local match</button>
+            <span id="localMpStatusPill" class="pill subtle">Local match: off</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="customizationModal" class="modal customizerModal hidden" role="dialog" aria-modal="true" aria-label="Character customization">
+      <div class="modalHeader">
+        <div class="modalTitle">Character customization</div>
+        <button id="closeCustomizationModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody customizerBody">
+        <div class="customizerPreviewCol">
+          <div class="cardTitle">Preview</div>
+          <div class="customizerPreviewWrap">
+            <img id="customizerPreviewImage" class="customizerPreviewImage" alt="Selected ghost preview" />
+          </div>
+          <div class="smallNote">Cosmetic only. Hitbox and gameplay are unchanged.</div>
+        </div>
+        <div class="customizerShopCol">
+          <div class="cardTitle">Preconfigured avatars</div>
+          <div class="row" style="margin-bottom: 8px">
+            <button id="avatarRandomEquipBtn" class="btn subtle" type="button">Equip random owned skin</button>
+          </div>
+          <div id="avatarShopList" class="list" aria-label="Avatar shop list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="announcementModal" class="modal announcementModal hidden" role="dialog" aria-modal="true" aria-label="Message from the team">
+      <div class="modalHeader">
+        <div class="modalTitle">From the team</div>
+        <button id="closeAnnouncementModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div id="announcementModalBox" class="announcementModalBox" aria-live="polite">
+          <div id="announcementModalContent" class="announcementModalContent"></div>
+        </div>
+        <p id="announcementModalUpdated" class="smallNote" style="margin-top: 10px"></p>
+      </div>
+    </div>
+
+    <div id="modModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Moderator panel">
+      <div class="modalHeader">
+        <div class="modalTitle">Moderator panel</div>
+        <button id="closeModModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Account moderation</div>
+          <div class="row">
+            <input id="modModerationUserIdInput" class="input" placeholder="User UUID…" autocomplete="off" />
+          </div>
+          <div class="row" style="margin-top: 10px">
+            <input id="modModerationReasonInput" class="input" placeholder="Reason…" autocomplete="off" />
+          </div>
+          <div class="row" style="margin-top: 10px">
+            <button id="modBanUserBtn" class="btn danger" type="button">Ban</button>
+            <button id="modRestrictUserBtn" class="btn" type="button">Restrict 7 days</button>
+            <button id="modUnbanUserBtn" class="btn subtle" type="button">Remove block</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Team message (settings ✨)</div>
+          <p class="smallNote">HTML allowed: links, bold, colors. Keep it friendly. Same message admins edit.</p>
+          <textarea id="modAnnouncementEditor" class="input announcementEditor" rows="6" placeholder="Sparkly HTML message…"></textarea>
+          <div class="row" style="margin-top: 10px">
+            <button id="modAnnouncementSaveBtn" class="btn primary" type="button">Save message</button>
+            <button id="modAnnouncementPreviewBtn" class="btn subtle" type="button">Preview</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Admin panel">
+      <div class="modalHeader">
+        <div class="modalTitle">Admin panel</div>
+        <button id="closeAdminModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="card">
+          <div class="cardTitle">Moderators</div>
+          <div class="row" style="flex-wrap: wrap; gap: 8px">
+            <input id="adminModUserIdInput" class="input" placeholder="User UUID to promote…" autocomplete="off" />
+            <button id="adminGrantModBtn" class="btn primary" type="button">Grant mod</button>
+            <button id="adminRevokeModBtn" class="btn danger" type="button">Revoke mod</button>
+          </div>
+          <div class="smallNote">Mods can ban or restrict players (not admins) and edit the team message. You can revoke anytime.</div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Team message (settings ✨)</div>
+          <textarea id="adminAnnouncementEditor" class="input announcementEditor" rows="6"></textarea>
+          <div class="row" style="margin-top: 10px">
+            <button id="adminAnnouncementSaveBtn" class="btn primary" type="button">Save message</button>
+            <button id="adminAnnouncementReloadBtn" class="btn subtle" type="button">Reload</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Reports</div>
+          <div id="adminReportsList" class="list" aria-label="Reports list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Issue inbox (runtime + user reports)</div>
+          <div id="adminIssueReportsList" class="list" aria-label="Issue reports list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Global levels</div>
+          <div id="adminLevelsList" class="list" aria-label="Admin global levels list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Leaderboard moderation</div>
+          <div class="row">
+            <input id="adminLeaderboardUserIdInput" class="input" placeholder="User UUID..." autocomplete="off" />
+            <button id="adminRemoveLeaderboardBtn" class="btn danger" type="button">Remove user row</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Account moderation</div>
+          <div class="row">
+            <input id="adminModerationUserIdInput" class="input" placeholder="User UUID..." autocomplete="off" />
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input id="adminModerationReasonInput" class="input" placeholder="Reason..." autocomplete="off" />
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button id="adminBanUserBtn" class="btn danger" type="button">Ban (block everything)</button>
+            <button id="adminRestrictUserBtn" class="btn" type="button">Restrict 7 days</button>
+            <button id="adminUnbanUserBtn" class="btn subtle" type="button">Remove block</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="authBackdrop" class="backdrop hidden" aria-hidden="true"></div>
+    <div id="authModal" class="modal authModal hidden" role="dialog" aria-modal="true" aria-label="Account">
+      <button type="button" class="iconBtn authModalCloseCorner" id="authModalCloseBtn" aria-label="Close">✕</button>
+      <div class="authModalLayout">
+        <div class="authModalBrand" aria-hidden="true">
+          <div class="authBrandMark">SSB</div>
+          <div class="authBrandTitle">Self-Sabotage Builder</div>
+          <p class="authBrandTagline">Build the trap. Survive the run. Sync scores with your account.</p>
+        </div>
+        <div class="authModalForms">
+          <div class="modalHeader authModalFormHeader">
+            <div class="modalTitle" id="authModalTitle">Account</div>
+            <div class="authTabRow" role="tablist" aria-label="Sign in or create account">
+              <button type="button" role="tab" id="authTabLogin" class="authTab active" aria-selected="true" aria-controls="authLoginForm">
+                Sign in
+              </button>
+              <button type="button" role="tab" id="authTabRegister" class="authTab" aria-selected="false" aria-controls="authRegisterForm">
+                Create account
+              </button>
+            </div>
+          </div>
+          <div class="modalBody authModalFormBody">
+            <p id="authStatus" class="authStatus" role="status" aria-live="polite"></p>
+            <div id="authDiagActions" class="authDiagActions hidden" aria-live="polite">
+              <button type="button" class="btn subtle authDiagCopyBtn" id="authCopyDiagBtn">
+                Copy details for support
+              </button>
+              <span class="authDiagHint">Send the pasted text to the developer if something fails.</span>
+            </div>
+            <p class="smallNote authSwitchHint">
+              Stuck after Google or Discord? Use <b>Sign out completely</b> below, wait a second, then try email or guest again.
+            </p>
+            <button type="button" class="btn subtle authFullSignOutBtn" id="authFullSignOutBtn">
+              Sign out completely (clears Google / Discord / email / guest session)
+            </button>
+            <form id="authLoginForm" class="authForm" role="tabpanel" aria-labelledby="authTabLogin" action="#" method="post" autocomplete="on" novalidate>
+              <label class="authLabel" for="authLoginUser"><span class="authIcon" aria-hidden="true">✉️</span> Email</label>
+              <input id="authLoginUser" class="input authInput" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" required />
+              <label class="authLabel" for="authLoginPass"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
+              <input id="authLoginPass" class="input authInput" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+              <button type="submit" class="btn primary authSubmitBtn" id="authLoginBtn">Sign in</button>
+              <button type="button" class="btn subtle" id="authGuestBtn">Continue without account</button>
+              <button type="button" class="btn subtle" id="authAnonBtn" title="Requires Anonymous provider enabled in Supabase">
+                Continue as guest (online leaderboard)
+              </button>
+              <button type="button" class="btn subtle" id="authMagicLinkBtn" title="Sends a one-time link to the email above">
+                Send email magic link
+              </button>
+              <button type="button" class="btn subtle" id="authGoogleBtn" title="Requires Google provider in Supabase Auth">
+                Continue with Google
+              </button>
+              <button type="button" class="btn subtle" id="authDiscordBtn" title="Requires Discord provider in Supabase Auth">
+                Continue with Discord
+              </button>
+            </form>
+            <form id="authRegisterForm" class="authForm hidden" role="tabpanel" aria-labelledby="authTabRegister" action="#" method="post" autocomplete="on" novalidate>
+              <label class="authLabel" for="authRegUser"><span class="authIcon" aria-hidden="true">✉️</span> Email</label>
+              <input id="authRegUser" class="input authInput" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" required />
+              <label class="authLabel" for="authRegPass"><span class="authIcon" aria-hidden="true">🔒</span> Password</label>
+              <input id="authRegPass" class="input authInput" name="password" type="password" autocomplete="new-password" maxlength="128" required />
+              <button type="submit" class="btn primary authSubmitBtn" id="authRegisterBtn">Create account</button>
+              <button type="button" class="btn subtle" id="authGuestBtnRegister">Continue without account</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.100.1/dist/umd/supabase.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+    <script src="multiplayer-config.js"></script>
+    <script src="supabase-config.js"></script>
+    <script src="systems/sabotage.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
