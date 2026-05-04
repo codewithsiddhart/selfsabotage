@@ -11507,60 +11507,6 @@
     }
 
     if (elMpJoinBtn && elMpJoinInput) {
-      const doJoin = () => {
-        const code = elMpJoinInput.value.trim().toUpperCase().slice(0, 6);
-        if (!/^[A-F0-9]{6}$/i.test(code)) {
-          showToast("Enter a 6-character room code.", 2000);
-          return;
-        }
-        const sock = ensureSocket();
-        if (!sock) return;
-        sock.emit(
-          "mp_join",
-          { roomId: code, name: mpDisplayName(), avatarId: mpEquippedAvatarForNet() },
-          (ack) => {
-            if (!ack || !ack.ok) {
-              const err = ack && ack.error ? String(ack.error) : "";
-              showToast(err === "not_found" ? "Room not found." : err === "full" ? "Room is full." : "Could not join.", 2400);
-              return;
-            }
-            mpRoomId = code;
-            mpIsHost = !!ack.isHost;
-            mpSaboteurSocketId = ack && ack.saboteurId ? String(ack.saboteurId) : null;
-            mpIsSaboteur = !!(ack && ack.isSaboteur);
-            mpRemotePeers.clear();
-            if (Array.isArray(ack.peers)) {
-              for (const p of ack.peers) {
-                if (!p || !p.id) continue;
-                mpRemotePeers.set(p.id, {
-                  x: 0,
-                  y: 0,
-                  vx: 0,
-                  name: String(p.name || "Player").slice(0, 18),
-                  avatarId: p.avatarId || null,
-                  seenMs: performance.now(),
-                });
-                {
-                  const av = avatarById(String(p.avatarId));
-                  if (av) void primeAvatarImageForShop(av);
-                }
-              }
-            }
-            if (ack.levelJson && typeof ack.levelJson === "string" && ack.levelJson) {
-              importGridFromJsonText(ack.levelJson, true);
-              showToast("Loaded host level into editor.", 2200);
-            }
-            if (ack && ack.match) applyMpMatchState(ack.match);
-            syncMpUi();
-            showToast("Joined room " + code + ".", 2000);
-          }
-        );
-      };
-      elMpJoinBtn.addEventListener("click", () => doJoin(false));
-      elMpJoinInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") doJoin(false);
-      });
-
       // ADD 5: Spectator mode — create a "Watch" button next to Join.
       let elMpWatchBtn = document.getElementById("mpWatchBtn");
       if (!elMpWatchBtn && elMpJoinBtn) {
@@ -12035,4 +11981,3 @@
     };
   }
 })();
-
