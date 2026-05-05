@@ -102,7 +102,7 @@
       canvas.width = newW;
       canvas.height = newH;
       // Invalidate cached gradients — they're keyed by canvas dimensions
-      if (typeof _gradCache !== "undefined") _gradCache.clear();
+      try { _gradCache.clear(); } catch (e) { /* not yet initialized */ }
     }
   }
 
