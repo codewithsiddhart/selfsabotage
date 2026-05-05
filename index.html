@@ -540,7 +540,11 @@
             <span>Show hitboxes &amp; path debug</span>
             <input id="debugOverlayToggle" type="checkbox" />
           </label>
-          <div class="smallNote">Play mode: player &amp; tile hitboxes, jump-range box. Build mode: last reachability BFS cells (teal).</div>
+          <label class="toggleRow" style="margin-top:8px;">
+            <span>Show FPS counter</span>
+            <input id="fpsCounterToggle" type="checkbox" checked />
+          </label>
+          <div class="smallNote">FPS counter shows live frame rate. Goes yellow below 40 FPS, red below 25. Low-quality mode disables expensive glow effects automatically.</div>
           <div class="row" style="margin-top: 10px; flex-wrap: wrap; gap: 8px">
             <button type="button" id="lbTestSupabaseBtn" class="btn subtle">
               Test global leaderboard (Supabase)

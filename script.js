@@ -2958,6 +2958,21 @@
     });
   }
 
+  // FPS counter toggle
+  const elFpsCounterToggle = /** @type {HTMLInputElement | null} */ ($("fpsCounterToggle"));
+  if (elFpsCounterToggle) {
+    // Restore saved preference
+    const savedFpsPref = localStorage.getItem("ssb_fps_counter");
+    if (savedFpsPref === "0") {
+      _fpsShowCounter = false;
+      elFpsCounterToggle.checked = false;
+    }
+    elFpsCounterToggle.addEventListener("change", () => {
+      _fpsShowCounter = elFpsCounterToggle.checked;
+      localStorage.setItem("ssb_fps_counter", _fpsShowCounter ? "1" : "0");
+    });
+  }
+
   // ---------- Device mode (mobile / desktop) ----------
   /** @type {"mobile"|"desktop"|null} */
   let deviceMode = localStorage.getItem(DEVICE_KEY) === "mobile" ? "mobile" : localStorage.getItem(DEVICE_KEY) === "desktop" ? "desktop" : null;
@@ -3123,6 +3138,10 @@
   let showPuzzleLinks = true;
   /** Next left-click on grid opens text prompt. */
   let textPlacementMode = false;
+  /** ADD 6: Current brush rotation (0–3, mapped to 0°/90°/180°/270°). */
+  let currentBrushRotation = 0;
+  /** ADD 6: Per-cell rotation overrides. Key "gx,gy" → rotation index (0–3). */
+  let tileRotations = /** @type {Record<string, number>} */ ({});
   /** Left or right drag-erase without spamming undo until pointerup. */
   let buildEraseActive = false;
   let buildEraseStrokeDirty = false;
@@ -9318,6 +9337,28 @@
         document.body.classList.toggle("sabotage-fake-hover", fakeHoverOn);
       }
     }
+
+    // --- FPS Counter overlay ---
+    if (_fpsShowCounter) {
+      const fps = _fpsDisplay;
+      const fpsColor = fps >= 55 ? "#4ade80" : fps >= 40 ? "#facc15" : "#f87171";
+      ctx.save();
+      ctx.font = "bold 13px monospace";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "top";
+      // Shadow for readability over any background
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = fpsColor;
+      ctx.fillText(`${fps} FPS`, canvas.width - 8, 8);
+      if (_fpsLow) {
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "#f87171";
+        ctx.fillText("⚠ low quality", canvas.width - 8, 24);
+      }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
   }
 
   /**
@@ -9354,15 +9395,10 @@
         }
       }
       ctx2.globalAlpha = 1;
-      const vg = ctx2.createLinearGradient(0, 0, canvas.width, canvas.height);
-      vg.addColorStop(0, "rgba(8, 12, 28, 0.55)");
-      vg.addColorStop(0.5, "rgba(6, 10, 22, 0.28)");
-      vg.addColorStop(1, "rgba(4, 6, 14, 0.58)");
+      const vg = cachedLinearGradient(ctx2, "scene_vg", 0, 0, canvas.width, canvas.height, [[0,"rgba(8,12,28,0.55)"],[0.5,"rgba(6,10,22,0.28)"],[1,"rgba(4,6,14,0.58)"]]);
       ctx2.fillStyle = vg;
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
-      const bottom = ctx2.createLinearGradient(0, canvas.height * 0.4, 0, canvas.height);
-      bottom.addColorStop(0, "rgba(0,0,0,0)");
-      bottom.addColorStop(1, "rgba(0,0,0,0.42)");
+      const bottom = cachedLinearGradient(ctx2, "scene_bottom", 0, canvas.height * 0.4, 0, canvas.height, [[0,"rgba(0,0,0,0)"],[1,"rgba(0,0,0,0.42)"]]);
       ctx2.fillStyle = bottom;
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.restore();
@@ -9370,17 +9406,13 @@
     }
 
     if (theme === "grid") {
-      const sky = ctx2.createLinearGradient(0, 0, 0, canvas.height);
-      sky.addColorStop(0, "rgba(10, 12, 26, 0.95)");
-      sky.addColorStop(1, "rgba(2, 3, 10, 1)");
-      ctx2.fillStyle = sky;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "grid_sky", 0, 0, 0, canvas.height, [[0,"rgba(10,12,26,0.95)"],[1,"rgba(2,3,10,1)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.save();
       ctx2.translate(layer(0.06), 0);
       const hz = canvas.height * 0.55;
-      const glow = ctx2.createRadialGradient(canvas.width / 2, hz, 10, canvas.width / 2, hz, canvas.width * 0.7);
-      glow.addColorStop(0, "rgba(167,139,250,0.14)");
-      glow.addColorStop(1, "rgba(0,0,0,0)");
+      const glow = _gradCache.get(`grid_glow|${canvas.width}|${canvas.height}`) ||
+        (() => { const g = ctx2.createRadialGradient(canvas.width / 2, hz, 10, canvas.width / 2, hz, canvas.width * 0.7); g.addColorStop(0, "rgba(167,139,250,0.14)"); g.addColorStop(1, "rgba(0,0,0,0)"); _gradCache.set(`grid_glow|${canvas.width}|${canvas.height}`, g); return g; })();
       ctx2.fillStyle = glow;
       ctx2.fillRect(-80, 0, canvas.width + 160, canvas.height);
       ctx2.strokeStyle = "rgba(122,167,255,0.14)";
@@ -9401,12 +9433,7 @@
       }
       ctx2.restore();
     } else if (theme === "cuteFlowers") {
-      const g = ctx2.createLinearGradient(0, 0, canvas.width, canvas.height);
-      g.addColorStop(0, "rgba(255, 248, 252, 1)");
-      g.addColorStop(0.38, "rgba(252, 231, 243, 1)");
-      g.addColorStop(0.72, "rgba(233, 245, 238, 1)");
-      g.addColorStop(1, "rgba(214, 236, 226, 1)");
-      ctx2.fillStyle = g;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "cute_bg", 0, 0, canvas.width, canvas.height, [[0,"rgba(255,248,252,1)"],[0.38,"rgba(252,231,243,1)"],[0.72,"rgba(233,245,238,1)"],[1,"rgba(214,236,226,1)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       const softEllipse = (bx, by, rw, rh, fill) => {
         ctx2.fillStyle = fill;
@@ -9421,19 +9448,11 @@
       softEllipse(canvas.width * 0.52, canvas.height + 18, 190, 115, "rgba(186, 230, 201, 0.3)");
       softEllipse(-50, canvas.height * 0.58, 160, 85, "rgba(255, 240, 248, 0.45)");
       softEllipse(canvas.width + 45, canvas.height * 0.52, 175, 95, "rgba(230, 242, 255, 0.38)");
-      const hg = ctx2.createLinearGradient(0, 0, 0, canvas.height * 0.72);
-      hg.addColorStop(0, "rgba(255, 255, 255, 0.5)");
-      hg.addColorStop(0.55, "rgba(255, 255, 255, 0.08)");
-      hg.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx2.fillStyle = hg;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "cute_hg", 0, 0, 0, canvas.height * 0.72, [[0,"rgba(255,255,255,0.5)"],[0.55,"rgba(255,255,255,0.08)"],[1,"rgba(255,255,255,0)"]]);
       ctx2.fillRect(-60, 0, canvas.width + 120, canvas.height * 0.72);
       ctx2.restore();
     } else if (theme === "city") {
-      const g = ctx2.createLinearGradient(0, 0, 0, canvas.height);
-      g.addColorStop(0, "rgba(72, 61, 120, 0.95)");
-      g.addColorStop(0.55, "rgba(28, 32, 58, 0.98)");
-      g.addColorStop(1, "rgba(12, 14, 28, 1)");
-      ctx2.fillStyle = g;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "city_sky", 0, 0, 0, canvas.height, [[0,"rgba(72,61,120,0.95)"],[0.55,"rgba(28,32,58,0.98)"],[1,"rgba(12,14,28,1)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.save();
       ctx2.translate(layer(0.04), 0);
@@ -9462,12 +9481,11 @@
       }
       ctx2.restore();
     } else if (theme === "dusk") {
-      const g = ctx2.createLinearGradient(0, 0, 0, canvas.height);
-      g.addColorStop(0, `rgba(255, 166, 103, ${0.06 + 0.02 * Math.sin(t * 0.35)})`);
-      g.addColorStop(0.55, "rgba(20, 18, 40, 0.95)");
-      g.addColorStop(1, "rgba(6, 7, 16, 1)");
-      ctx2.fillStyle = g;
+      // Dusk top color animates — can't cache, but base layers can
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "dusk_base", 0, 0.55 * canvas.height, 0, canvas.height, [[0,"rgba(20,18,40,0.95)"],[1,"rgba(6,7,16,1)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
+      ctx2.fillStyle = `rgba(255,166,103,${0.06 + 0.02 * Math.sin(t * 0.35)})`;
+      ctx2.fillRect(0, 0, canvas.width, canvas.height * 0.55);
       ctx2.save();
       ctx2.translate(layer(0.08), 0);
       ctx2.fillStyle = "rgba(255,255,255,0.05)";
@@ -9478,11 +9496,7 @@
       }
       ctx2.restore();
     } else if (theme === "forest") {
-      const g = ctx2.createLinearGradient(0, 0, 0, canvas.height);
-      g.addColorStop(0, "rgba(20, 60, 35, 0.95)");
-      g.addColorStop(0.5, "rgba(15, 45, 25, 0.98)");
-      g.addColorStop(1, "rgba(8, 28, 15, 1)");
-      ctx2.fillStyle = g;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "forest_sky", 0, 0, 0, canvas.height, [[0,"rgba(20,60,35,0.95)"],[0.5,"rgba(15,45,25,0.98)"],[1,"rgba(8,28,15,1)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.save();
       ctx2.translate(layer(0.1), 0);
@@ -9494,11 +9508,7 @@
       }
       ctx2.restore();
     } else if (theme === "indian") {
-      const g = ctx2.createLinearGradient(0, 0, 0, canvas.height);
-      g.addColorStop(0, "rgba(80, 35, 20, 0.95)");
-      g.addColorStop(0.4, "rgba(55, 25, 15, 0.98)");
-      g.addColorStop(1, "rgba(30, 12, 8, 1)");
-      ctx2.fillStyle = g;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "indian_sky", 0, 0, 0, canvas.height, [[0,"rgba(80,35,20,0.95)"],[0.4,"rgba(55,25,15,0.98)"],[1,"rgba(30,12,8,1)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.save();
       ctx2.translate(layer(0.07), 0);
@@ -9512,10 +9522,7 @@
       }
       ctx2.restore();
     } else {
-      const g = ctx2.createLinearGradient(0, 0, 0, canvas.height);
-      g.addColorStop(0, `rgba(40, 54, 120, ${0.20 + 0.06 * Math.sin(t * 0.55)})`);
-      g.addColorStop(1, `rgba(10, 12, 26, 0.92)`);
-      ctx2.fillStyle = g;
+      ctx2.fillStyle = cachedLinearGradient(ctx2, "default_sky", 0, 0, 0, canvas.height, [[0,"rgba(40,54,120,0.26)"],[1,"rgba(10,12,26,0.92)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.save();
       ctx2.translate(layer(0.09), layerY(0.07));
@@ -9933,7 +9940,7 @@
     fallback();
   }
 
-  function drawTile(ctx2, type, x, y, alpha = 1, glowBoost = 0, nowMs = performance.now(), mergeMask = null) {
+  function drawTile(ctx2, type, x, y, alpha = 1, glowBoost = 0, nowMs = 0, mergeMask = null) {
     ctx2.save();
     ctx2.globalAlpha = alpha;
     const pulseFast = 0.5 + 0.5 * Math.sin(nowMs * 0.012 + x * 0.02 + y * 0.03);
@@ -10004,8 +10011,10 @@
     } else if (type === Tile.hex) {
       // Keep a shared shell template so custom images still read as "hex".
       ctx2.save();
-      ctx2.shadowColor = "rgba(167,139,250,0.95)";
-      ctx2.shadowBlur = 10 + glowBoost * 8 + pulseSlow * 7;
+      if (shouldDrawShadows()) {
+        ctx2.shadowColor = "rgba(167,139,250,0.95)";
+        ctx2.shadowBlur = 10 + glowBoost * 8 + pulseSlow * 7;
+      }
       ctx2.fillStyle = "rgba(54,38,88,0.98)";
       roundRect(ctx2, x + 2, y + 2, TILE - 4, TILE - 4, 8);
       ctx2.fill();
@@ -10033,8 +10042,10 @@
     } else if (type === Tile.lava) {
       // Lava always gets emissive treatment regardless of texture availability.
       ctx2.save();
-      ctx2.shadowColor = "rgba(251,146,60,0.95)";
-      ctx2.shadowBlur = 12 + glowBoost * 8 + pulseFast * 6;
+      if (shouldDrawShadows()) {
+        ctx2.shadowColor = "rgba(251,146,60,0.95)";
+        ctx2.shadowBlur = 12 + glowBoost * 8 + pulseFast * 6;
+      }
       ctx2.fillStyle = "rgba(58,20,14,0.98)";
       roundRect(ctx2, x + ml, y + mu - 1, TILE - ml - mr, TILE - mu - md + 1, 7);
       ctx2.fill();
@@ -10080,8 +10091,10 @@
       }
     } else if (type === Tile.speedBoost) {
       ctx2.save();
-      ctx2.shadowColor = "rgba(74,222,128,0.95)";
-      ctx2.shadowBlur = 11 + glowBoost * 8 + pulseFast * 6;
+      if (shouldDrawShadows()) {
+        ctx2.shadowColor = "rgba(74,222,128,0.95)";
+        ctx2.shadowBlur = 11 + glowBoost * 8 + pulseFast * 6;
+      }
       const g = ctx2.createLinearGradient(x + 2, y + 4, x + TILE - 2, y + TILE - 4);
       g.addColorStop(0, "rgba(22,163,74,0.9)");
       g.addColorStop(1, "rgba(16,185,129,0.9)");
@@ -10169,8 +10182,10 @@
 
   function glowRect(ctx2, x, y, w, h, color, boost = 0) {
     ctx2.save();
-    ctx2.shadowColor = color;
-    ctx2.shadowBlur = 10 + boost * 6;
+    if (shouldDrawShadows()) {
+      ctx2.shadowColor = color;
+      ctx2.shadowBlur = 10 + boost * 6;
+    }
     ctx2.fillStyle = color;
     roundRect(ctx2, x, y, w, h, 9);
     ctx2.fill();
@@ -10182,8 +10197,10 @@
 
   function drawSpikes(ctx2, x, y, boost) {
     ctx2.save();
-    ctx2.shadowColor = "rgba(255,77,109,0.9)";
-    ctx2.shadowBlur = 10 + boost * 6;
+    if (shouldDrawShadows()) {
+      ctx2.shadowColor = "rgba(255,77,109,0.9)";
+      ctx2.shadowBlur = 10 + boost * 6;
+    }
     ctx2.fillStyle = "rgba(255,77,109,0.92)";
     ctx2.beginPath();
     const baseY = y + TILE - 4;
@@ -10315,8 +10332,10 @@
       ctx2.globalAlpha = 0.55 + 0.35 * Math.sin((state.now - state.t0) / 160);
       ctx2.strokeStyle = "rgba(45,212,191,0.95)";
       ctx2.lineWidth = 3;
-      ctx2.shadowColor = "rgba(45,212,191,0.6)";
-      ctx2.shadowBlur = 12;
+      if (shouldDrawShadows()) {
+        ctx2.shadowColor = "rgba(45,212,191,0.6)";
+        ctx2.shadowBlur = 12;
+      }
       ctx2.beginPath();
       ctx2.arc(0, p.h * 0.45, Math.max(p.w, p.h) * 0.85, 0, Math.PI * 2);
       ctx2.stroke();
@@ -11518,11 +11537,8 @@
         elMpWatchBtn.style.cssText = "opacity:0.7;margin-left:4px;";
         elMpJoinBtn.after(elMpWatchBtn);
       }
-      if (elMpWatchBtn) {
-        elMpWatchBtn.addEventListener("click", () => doJoin(true));
-      }
 
-      function doJoin(spectate = false) {
+      const doJoin = (spectate = false) => {
         const code = elMpJoinInput.value.trim().toUpperCase().slice(0, 6);
         if (!/^[A-F0-9]{6}$/i.test(code)) {
           showToast("Enter a 6-character room code.", 2000);
@@ -11568,6 +11584,14 @@
             showToast(spectate ? "Spectating room " + code + "." : "Joined room " + code + ".", 2000);
           }
         );
+      };
+
+      elMpJoinBtn.addEventListener("click", () => doJoin(false));
+      elMpJoinInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doJoin(false);
+      });
+      if (elMpWatchBtn) {
+        elMpWatchBtn.addEventListener("click", () => doJoin(true));
       }
     }
 
@@ -11733,13 +11757,88 @@
     });
   }
 
-  // ---------- Game loop ----------
+  // ================================================================
+  // PERFORMANCE PATCH
+  // ================================================================
+
+  // --- Debounced persist: never stringify+write localStorage mid-frame ---
+  let _persistDirty = false;
+  let _persistTimer = 0;
+  const _origPersist = persist;
+  function persist() {
+    _persistDirty = true;
+    if (_persistTimer) return;
+    _persistTimer = setTimeout(() => {
+      _persistTimer = 0;
+      if (_persistDirty) {
+        _persistDirty = false;
+        localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+      }
+    }, 400);
+  }
+
+  // --- Gradient cache: reuse gradient objects keyed by canvas size + theme ---
+  const _gradCache = new Map();
+  function cachedLinearGradient(ctx2, key, x0, y0, x1, y1, stops) {
+    const ckey = `${key}|${canvas.width}|${canvas.height}`;
+    let g = _gradCache.get(ckey);
+    if (!g) {
+      g = ctx2.createLinearGradient(x0, y0, x1, y1);
+      for (const [pos, col] of stops) g.addColorStop(pos, col);
+      _gradCache.set(ckey, g);
+      // Flush cache when it grows large (theme switch, resize, etc.)
+      if (_gradCache.size > 40) _gradCache.clear();
+    }
+    return g;
+  }
+  // Invalidate gradient cache on canvas resize
+  const _origResizeCanvas = resizeCanvas;
+  function resizeCanvas() {
+    _origResizeCanvas();
+    _gradCache.clear();
+  }
+
+  // --- FPS counter state ---
+  let _fpsFrameCount = 0;
+  let _fpsSampleStart = performance.now();
+  let _fpsDisplay = 0;     // last computed FPS shown in HUD
+  let _fpsLow = false;     // true when FPS < 40 → adaptive quality kicks in
+  let _fpsShowCounter = true;
+
+  // --- Adaptive shadow quality: disabled when FPS drops below 40 ---
+  // shadowBlur is the #1 GPU bottleneck in Canvas2D. We skip it when lagging.
+  function shouldDrawShadows() {
+    return !_fpsLow;
+  }
+
+  // ================================================================
+  // END PERFORMANCE PATCH INFRASTRUCTURE
+  // ================================================================
+
   let lastFrame = performance.now();
   function frame(now) {
     const dt = clamp(now - lastFrame, 4, 32);
     lastFrame = now;
 
+    // --- FPS sampling (every 30 frames) ---
+    _fpsFrameCount++;
+    if (_fpsFrameCount >= 30) {
+      const elapsed = now - _fpsSampleStart;
+      _fpsDisplay = Math.round((_fpsFrameCount / elapsed) * 1000);
+      _fpsLow = _fpsDisplay < 40;
+      _fpsFrameCount = 0;
+      _fpsSampleStart = now;
+    }
+
     const docHidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+
+    // When tab is hidden: skip all work, reschedule, and reset lastFrame so
+    // dt doesn't spike to thousands of ms when the user returns to the tab.
+    if (docHidden) {
+      lastFrame = now;
+      requestAnimationFrame(frame);
+      return;
+    }
 
     // --- update (single requestAnimationFrame loop; dt-clamped) ---
     updateToast(now);
@@ -11787,10 +11886,10 @@
     if (input.wasPressed(keyForAction("toggleBuild")) && !elBuildBtn.disabled) setMode("build");
     if (input.wasPressed(keyForAction("togglePlay")) && !elPlayBtn.disabled) setMode("play");
 
-    if (mode === "play" && !docHidden) updatePlay(dt, now);
+    if (mode === "play") updatePlay(dt, now);
 
     // --- render ---
-    if (!docHidden) render(now);
+    render(now);
 
     input.tick();
     requestAnimationFrame(frame);
@@ -11981,3 +12080,4 @@
     };
   }
 })();
+
