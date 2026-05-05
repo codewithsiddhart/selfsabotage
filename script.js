@@ -101,6 +101,8 @@
     if (canvas.width !== newW || canvas.height !== newH) {
       canvas.width = newW;
       canvas.height = newH;
+      // Invalidate cached gradients — they're keyed by canvas dimensions
+      if (typeof _gradCache !== "undefined") _gradCache.clear();
     }
   }
 
@@ -11790,12 +11792,6 @@
       if (_gradCache.size > 40) _gradCache.clear();
     }
     return g;
-  }
-  // Invalidate gradient cache on canvas resize
-  const _origResizeCanvas = resizeCanvas;
-  function resizeCanvas() {
-    _origResizeCanvas();
-    _gradCache.clear();
   }
 
   // --- FPS counter state ---
