@@ -18,12 +18,26 @@
   // - Local player profiles with levels, stats, difficulty/points, and local leaderboard.
   // - No external dependencies and no audio files: lightweight procedural audio via WebAudio.
 
-  /** Cap pooled particles so effects cannot grow without bound. */
-  const MAX_PARTICLES = 240;
+  const {
+    MAX_PARTICLES, TILE, LEGACY_COLS, LEGACY_ROWS, COLS, ROWS,
+    CANVAS_NATIVE_W, CANVAS_NATIVE_H, CANVAS_ASPECT,
+    MAX_LEVEL_TEXTS, MAX_LEVEL_TEXT_LEN,
+    JUMP_BUFFER_MS, PAD_LAUNCH_MULT, JUMP_FROM_PAD_MULT, COYOTE_MS,
+    AIR_RELEASE_FRIC_MUL, GROUND_TURN_ACCEL_MUL, CAM_FOLLOW_LAMBDA,
+    MUD_MOVE_MUL, BG_PARALLAX_LINK_X, BG_PARALLAX_LINK_Y, BG_PARALLAX_SMOOTH,
+    BUILD_LIMITS, POINTS, PHYS,
+    GRAVITY, JUMP_VELOCITY, MOVE_SPEED,
+    Tile, KNOWN_TILE_VALUES, TileInfo, paletteOrder, TilePaletteIcon,
+    TILE_TEXTURE_SRC, MUSIC_LIBRARY,
+    DRAFT_GRID_KEY, TUTORIAL_PROMPT_KEY, SABOTAGE_META_KEY,
+    SAVE_KEY, DEVICE_KEY, SABOTAGE_LOG_MAX, UNDO_MAX, VALIDATE_DEBOUNCE_MS,
+    VIBE_LINES, VIBE_WIN_LINES, VIBE_LOSE_LINES,
+  } = window.GameConstants;
 
-  const DRAFT_GRID_KEY = "ssb_build_draft_v1";
-  const TUTORIAL_PROMPT_KEY = "ssb_tutorial_prompt_v1";
-  const SABOTAGE_META_KEY = "ssb_sabotage_meta_v1";
+  const {
+    clamp, lerp, distanceSq, uid, makeGrid, inBounds, roundRect,
+    hash2, hashStr, seedFromGrid, mulberry32,
+  } = window.GameUtils;
 
   /** Consumed when a play run starts (from start modal checkboxes). */
   let pendingChallengeOpts = { noDoubleJump: false, maxDeaths: 0 };
@@ -31,7 +45,6 @@
   // ADD 3: Sabotage event log — stores last 4 events for HUD display.
   /** @type {Array<{id:string, category:string, ts:number}>} */
   const sabotageEventLog = [];
-  const SABOTAGE_LOG_MAX = 4;
 
   window.addEventListener("sabotageTriggered", (e) => {
     const rule = e.detail;
@@ -39,16 +52,6 @@
     sabotageEventLog.push({ id: String(rule.id || "sabotage"), category: String(rule.category || ""), ts: performance.now() });
     if (sabotageEventLog.length > SABOTAGE_LOG_MAX) sabotageEventLog.shift();
   });
-
-  const VIBE_LINES = [
-    "Cute world. Cruel rules.",
-    "You almost decoded the curse.",
-    "Legend run loading...",
-    "The map remembers your habits.",
-    "One more run and it clicks.",
-  ];
-  const VIBE_WIN_LINES = ["Legendary focus.", "You bent the curse.", "You made chaos look cute."];
-  const VIBE_LOSE_LINES = ["So close.", "It is learning you.", "You are almost there."];
   let vibeLineIndex = 0;
   let vibeNextAt = 0;
 
@@ -87,9 +90,6 @@
   // The canvas bitmap tracks its CSS display width, capped at the native 960×576 art resolution.
   // This makes it pixel-accurate on all screen sizes without changing any game logic (which
   // already reads canvas.width / canvas.height everywhere).
-  const CANVAS_NATIVE_W = 960;
-  const CANVAS_NATIVE_H = 576;
-  const CANVAS_ASPECT = CANVAS_NATIVE_W / CANVAS_NATIVE_H;
 
   function resizeCanvas() {
     const stageWrap = canvas.parentElement;
@@ -1563,224 +1563,7 @@
     return { data: { user, session }, error: null };
   }
 
-  // ---------- Constants ----------
-  const TILE = 32;
-  /** Classic built-in / random levels are authored on this grid size, then placed in the larger world (bottom-aligned). */
-  const LEGACY_COLS = 30;
-  const LEGACY_ROWS = 18;
-  /** Scrollable build / play world (tiles). Viewport remains canvas pixel size. */
-  const COLS = 64;
-  const ROWS = 36;
-
-  const BUILD_LIMITS = /** @type {const} */ ({
-    platform: 160,
-    spikes: 70,
-    jumppad: 40,
-    hex: 18,
-    lava: 24,
-    speedBoost: 18,
-    food: 12,
-    pathBlock: 60,
-    checkpoint: 1,
-    mud: 10,
-    betrayal: 16,
-    pressureSwitch: 10,
-    timedDoor: 8,
-  });
-
-  /** Difficulty points per tile (unchanged — only placement caps were halved). */
-  const POINTS = /** @type {const} */ ({
-    platform: 1.0,
-    spikes: 2.0,
-    jumppad: 1.5,
-    hex: 2.5,
-    lava: 3.0,
-    speedBoost: 1.5,
-    food: 1.0,
-    pathBlock: 0,
-    checkpoint: 0.5,
-    mud: 1.2,
-    betrayal: 1.7,
-    pressureSwitch: 1.1,
-    timedDoor: 1.4,
-  });
-
-  const PHYS = /** @type {const} */ ({
-    accel: 2480,
-    maxSpeed: 298,
-    friction: 1920,
-    gravity: 1540,
-    jumpV: 588,
-    airControl: 0.9,
-  });
-
-  /** Shared with `stepPlayer` and jump-bounds checks. */
-  const GRAVITY = PHYS.gravity;
-  const JUMP_VELOCITY = PHYS.jumpV;
-  const MOVE_SPEED = PHYS.maxSpeed;
-
-  /** Early jump press still counts if you land within this window (ms). */
-  const JUMP_BUFFER_MS = 158;
-  /** Pad auto-launch and manual jump on a pad are stronger than a normal floor jump. */
-  const PAD_LAUNCH_MULT = 1.26;
-  const JUMP_FROM_PAD_MULT = 1.42;
-  /** Leave ground; jump still registers for this long (ms). */
-  const COYOTE_MS = 142;
-  /** In air, horizontal release decelerates with this fraction of ground friction (smoother arcs). */
-  const AIR_RELEASE_FRIC_MUL = 0.48;
-  /** Extra ground accel when reversing direction (snappy turn without raising max speed). */
-  const GROUND_TURN_ACCEL_MUL = 1.52;
-  /** Camera follow: higher = snappier (1/s-ish scale, frame-rate independent). */
-  const CAM_FOLLOW_LAMBDA = 13.8;
-
-  /** Standing on or overlapping mud: move/jump strength multiplied by this (5× slower ⇒ 0.2). */
-  const MUD_MOVE_MUL = 0.2;
-
-  /** Background parallax: scrolls slower than the camera/player (visual only). Higher smooth = snappier follow. */
-  const BG_PARALLAX_LINK_X = 0.58;
-  const BG_PARALLAX_LINK_Y = 0.52;
-  const BG_PARALLAX_SMOOTH = 15.5;
-
-  /** @typedef {"empty"|"start"|"goal"|"checkpoint"|"platform"|"spikes"|"jumppad"|"hex"|"lava"|"speedBoost"|"food"|"pathBlock"|"mud"|"betrayal"|"pressureSwitch"|"timedDoor"} TileType */
-  const Tile = /** @type {const} */ ({
-    empty: "empty",
-    start: "start",
-    goal: "goal",
-    checkpoint: "checkpoint",
-    platform: "platform",
-    spikes: "spikes",
-    jumppad: "jumppad",
-    hex: "hex",
-    lava: "lava",
-    speedBoost: "speedBoost",
-    food: "food",
-    pathBlock: "pathBlock",
-    mud: "mud",
-    betrayal: "betrayal",
-    pressureSwitch: "pressureSwitch",
-    timedDoor: "timedDoor",
-  });
-
-  const KNOWN_TILE_VALUES = new Set(Object.values(Tile));
-
-  const TileInfo = /** @type {Record<TileType, {name:string, hint:string, color:string}>} */ ({
-    empty: { name: "Eraser", hint: "Remove tiles", color: "transparent" },
-    start: { name: "Start", hint: "Spawn point (required)", color: "rgba(122, 167, 255, 1)" },
-    goal: { name: "Goal", hint: "Touch to win (required)", color: "rgba(251, 191, 36, 1)" },
-    checkpoint: {
-      name: "Checkpoint",
-      hint: "Exactly one per level — touch to save respawn (required)",
-      color: "rgba(56, 189, 248, 1)",
-    },
-    platform: { name: "Platform", hint: "Solid ground (may betray you)", color: "rgba(79, 103, 255, 1)" },
-    spikes: { name: "Spikes", hint: "Kills you (may activate late)", color: "rgba(255, 77, 109, 1)" },
-    jumppad: { name: "Jump Pad", hint: "Launches you (may misfire)", color: "rgba(45, 212, 191, 1)" },
-    hex: { name: "Hex", hint: "Curses you (special sabotage)", color: "rgba(167, 139, 250, 1)" },
-    lava: { name: "Lava", hint: "Instant death", color: "rgba(234, 88, 12, 1)" },
-    speedBoost: { name: "Speed", hint: "Temporary speed boost", color: "rgba(34, 197, 94, 1)" },
-    food: { name: "Food", hint: "Restore stability, reduce sabotage", color: "rgba(251, 146, 60, 1)" },
-    pathBlock: { name: "Path Block", hint: "Marks intended path (for validation)", color: "rgba(150, 200, 255, 0.6)" },
-    mud: { name: "Mud", hint: "5× slower move/jump; can break or shift like platforms", color: "rgba(140, 82, 58, 0.95)" },
-    betrayal: { name: "Betrayal", hint: "Starts safe, mutates mid-run into hazard or sludge", color: "rgba(246, 173, 85, 0.95)" },
-    pressureSwitch: {
-      name: "Pressure Switch",
-      hint: "Touch to instantly reroute player to its linked destination",
-      color: "rgba(251, 113, 133, 0.95)",
-    },
-    timedDoor: {
-      name: "Timed Door",
-      hint: "Teleport door with short cooldown; set destination after placement",
-      color: "rgba(45, 212, 191, 0.95)",
-    },
-  });
-
-  const paletteOrder = /** @type {TileType[]} */ ([
-    Tile.start,
-    Tile.goal,
-    Tile.checkpoint,
-    Tile.platform,
-    Tile.spikes,
-    Tile.jumppad,
-    Tile.hex,
-    Tile.lava,
-    Tile.mud,
-    Tile.betrayal,
-    Tile.pressureSwitch,
-    Tile.timedDoor,
-    Tile.speedBoost,
-    Tile.food,
-    // REMOVE 4: pathBlock is an internal routing hint for the BFS — hidden from the player palette.
-    // Uncomment to re-expose: Tile.pathBlock,
-    Tile.empty,
-  ]);
-
-  const TilePaletteIcon = /** @type {Record<TileType, string>} */ ({
-    empty: "⌧",
-    start: "🏁",
-    goal: "⭐",
-    checkpoint: "◇",
-    platform: "▭",
-    spikes: "▲",
-    jumppad: "⌃",
-    hex: "✦",
-    lava: "≈",
-    mud: "≋",
-    betrayal: "☍",
-    pressureSwitch: "⎘",
-    timedDoor: "◫",
-    speedBoost: "⚡",
-    food: "●",
-    pathBlock: "◇",
-  });
-
-  const MAX_LEVEL_TEXTS = 48;
-  const MAX_LEVEL_TEXT_LEN = 40;
-
-  /**
-   * Art for real tiles (not separate “model” tools). PNGs under assets/models/ (replace with your art).
-   */
-  const TILE_TEXTURE_SRC = /** @type {Record<string, string>} */ ({
-    platform: "assets/models/tile-platform.png",
-    spikes: "assets/models/tile-spikes.png",
-    jumppad: "assets/models/tile-jumppad.png",
-    speedBoost: "assets/models/tile-speed.png",
-    hex: "assets/models/tile-hex.png",
-    food: "assets/models/tile-food.png",
-    lava: "assets/models/tile-lava.png",
-    mud: "assets/models/tile-mud.png",
-  });
-
-  /** @type {Record<string, HTMLImageElement>} */
-  const tileTextureCache = {};
-  function ensureTileTexture(key) {
-    const src = TILE_TEXTURE_SRC[key];
-    if (!src || tileTextureCache[key]) return;
-    const im = new Image();
-    im.decoding = "async";
-    im.onload = () => scheduleValidate();
-    im.src = src;
-    tileTextureCache[key] = im;
-  }
-  for (const k of Object.keys(TILE_TEXTURE_SRC)) ensureTileTexture(k);
-
-  /** Old saves used separate model tiles — map onto real gameplay tiles. */
-  function normalizeImportedTileType(raw) {
-    const t = String(raw || "").trim() || Tile.empty;
-    if (t === "modelOrb") return Tile.jumppad;
-    if (t === "modelTrack") return Tile.speedBoost;
-    if (t === "modelSnack") return Tile.food;
-    if (t === "modelGlyph") return Tile.hex;
-    if (KNOWN_TILE_VALUES.has(t)) return /** @type {TileType} */ (t);
-    return Tile.empty;
-  }
-
-  const MUSIC_LIBRARY = /** @type {{ id: string, label: string, file: string }[]} */ ([
-    { id: "off", label: "Off", file: "" },
-  ]);
-
   // ---------- Storage ----------
-  const SAVE_KEY = "SSB_SAVE_V2";
-  const DEVICE_KEY = "SSB_DEVICE";
 
   /** After device picker, closing auth should open start modal if still no player. */
   let authCloseOpensStart = false;
@@ -3125,7 +2908,6 @@
   /** Undo stack: JSON snapshots of flattenGrid (full world). */
   const undoStack = /** @type {string[]} */ ([]);
   const redoStack = /** @type {string[]} */ ([]);
-  const UNDO_MAX = 60; // IMPROVE 5: Capped to prevent unbounded memory growth on long edit sessions.
   /** Alt-drag: normalized selection in grid coords (inclusive). */
   let buildMarquee = /** @type {{ x0: number, y0: number, x1: number, y1: number } | null} */ (null);
   let buildMarqueeDrag = false;
@@ -4092,14 +3874,6 @@
     return out;
   }
 
-  function mulberry32(a) {
-    return function () {
-      let t = (a += 0x6d2b79f5);
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
 
   /**
    * Extra easy-tier preset layouts (same grid size as other built-ins).
@@ -5073,7 +4847,6 @@
 
   // ---------- Level validation + difficulty ----------
   /** Stochastic physics validation is heavy; debounce so painting/erasing stays responsive. */
-  const VALIDATE_DEBOUNCE_MS = 200;
   let validateDebounceTimer = 0;
 
   function flushBuildValidation() {
@@ -10447,8 +10220,8 @@
     return { x: gx * TILE + off.ox, y: gy * TILE + off.oy, w: TILE, h: TILE };
   }
 
-  // PERF 1: Pre-allocated scratch array for queryTiles — avoids 120+ array allocations per second.
   const _queryTilesScratch = new Array(64);
+  const _queryTilesScratchCap = 64;
   let _queryTilesLen = 0;
 
   function queryTiles(state, aabb) {
@@ -10459,7 +10232,7 @@
     _queryTilesLen = 0;
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
-        if (_queryTilesLen < _queryTilesScratch.length) {
+        if (_queryTilesLen < _queryTilesScratchCap) {
           let slot = _queryTilesScratch[_queryTilesLen];
           if (!slot) { slot = { gx: 0, gy: 0, tile: null }; _queryTilesScratch[_queryTilesLen] = slot; }
           slot.gx = x; slot.gy = y; slot.tile = state.tiles[y][x];
@@ -10467,7 +10240,8 @@
         }
       }
     }
-    return _queryTilesScratch.slice(0, _queryTilesLen);
+    _queryTilesScratch.length = _queryTilesLen;
+    return _queryTilesScratch;
   }
 
   function aabbOverlap(a, b) {
@@ -11766,7 +11540,6 @@
   // --- Debounced persist: never stringify+write localStorage mid-frame ---
   let _persistDirty = false;
   let _persistTimer = 0;
-  const _origPersist = persist;
   function persist() {
     _persistDirty = true;
     if (_persistTimer) return;
@@ -11993,87 +11766,5 @@
 
   // (Modal button listeners are wired above; avoid duplicates here.)
 
-  // ---------- Utility ----------
-  function makeGrid(w, h, fill) {
-    const g = [];
-    for (let y = 0; y < h; y++) {
-      const row = [];
-      for (let x = 0; x < w; x++) row.push(fill);
-      g.push(row);
-    }
-    return g;
-  }
-
-  function inBounds(x, y) {
-    return x >= 0 && x < COLS && y >= 0 && y < ROWS;
-  }
-
-  function clamp(v, a, b) {
-    return Math.max(a, Math.min(b, v));
-  }
-
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  function distanceSq(ax, ay, bx, by) {
-    const dx = ax - bx;
-    const dy = ay - by;
-    return dx * dx + dy * dy;
-  }
-
-  function roundRect(ctx2, x, y, w, h, r) {
-    const rr = Math.min(r, w / 2, h / 2);
-    ctx2.beginPath();
-    ctx2.moveTo(x + rr, y);
-    ctx2.arcTo(x + w, y, x + w, y + h, rr);
-    ctx2.arcTo(x + w, y + h, x, y + h, rr);
-    ctx2.arcTo(x, y + h, x, y, rr);
-    ctx2.arcTo(x, y, x + w, y, rr);
-    ctx2.closePath();
-  }
-
-  function uid() {
-    return Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2);
-  }
-
-  function seedFromGrid(g) {
-    let s = 2166136261 >>> 0;
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        const t = g[y][x];
-        s ^= hash2(x, y) ^ hashStr(t);
-        s = Math.imul(s, 16777619) >>> 0;
-      }
-    }
-    return s >>> 0;
-  }
-
-  function hash2(x, y) {
-    let h = (x * 374761393 + y * 668265263) >>> 0;
-    h = (h ^ (h >>> 13)) >>> 0;
-    h = Math.imul(h, 1274126177) >>> 0;
-    return h >>> 0;
-  }
-
-  function hashStr(str) {
-    let h = 2166136261 >>> 0;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619) >>> 0;
-    }
-    return h >>> 0;
-  }
-
-  function mulberry32(seed) {
-    let a = seed >>> 0;
-    return function () {
-      a |= 0;
-      a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
 })();
 
