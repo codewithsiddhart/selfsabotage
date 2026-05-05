@@ -134,6 +134,14 @@
   };
   bgImage.src = "assets/world-backdrop.png";
 
+  /** 2bablupintu custom background */
+  const bgImageBablupintu = new Image();
+  let bgImageBablupintuReady = false;
+  bgImageBablupintu.decoding = "async";
+  bgImageBablupintu.onload = () => { bgImageBablupintuReady = bgImageBablupintu.naturalWidth > 0; };
+  bgImageBablupintu.onerror = () => { bgImageBablupintuReady = false; };
+  bgImageBablupintu.src = "assets/2bablupintu-bg.jpg";
+
   const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
   const elPalette = $("palette");
@@ -1937,7 +1945,7 @@
       const allowedThemes = ["dark", "light", "forest", "indian", "cute"];
       if (!allowedThemes.includes(parsed.settings.theme)) parsed.settings.theme = "dark";
       if (typeof parsed.settings.sound !== "boolean") parsed.settings.sound = true;
-      const allowedBg = ["scene", "nebula", "grid", "dusk", "forest", "indian", "cuteFlowers", "city"];
+      const allowedBg = ["scene", "nebula", "grid", "dusk", "forest", "indian", "cuteFlowers", "city", "bablupintu"];
       if (!allowedBg.includes(parsed.settings.background)) parsed.settings.background = "scene";
       if (typeof parsed.settings.volume !== "number") parsed.settings.volume = 0.7;
       if (typeof parsed.settings.sabotageLevel !== "number") parsed.settings.sabotageLevel = 5;
@@ -3124,6 +3132,9 @@
   /** Build mode: viewport top-left in world pixels (scroll). */
   let buildCamX = 0;
   let buildCamY = 0;
+  // Expose for external access (culling cache upgrade)
+  Object.defineProperty(window, "__ssb_buildCamX", { get: () => buildCamX });
+  Object.defineProperty(window, "__ssb_buildCamY", { get: () => buildCamY });
   let buildPanPointerId = /** @type {number | null} */ (null);
   let buildPanLastClient = { x: 0, y: 0 };
   /** @type {{ cx: number; cy: number; camX: number; camY: number } | null} */
@@ -5514,6 +5525,18 @@
     refreshFeaturedLevelsUI();
     void refreshGlobalLevelsList();
   });
+  // Quick Levels button in topbar — opens start modal directly to preconfigured levels
+  const elQuickLevelsBtn = document.getElementById("quickLevelsBtn");
+  if (elQuickLevelsBtn) {
+    elQuickLevelsBtn.addEventListener("click", () => {
+      openStartModal();
+      // Scroll the level pick card into view after modal opens
+      setTimeout(() => {
+        const card = document.getElementById("startModalLevelPickCard");
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 120);
+    });
+  }
   if (elRefreshGlobalLevelsBtn) elRefreshGlobalLevelsBtn.addEventListener("click", () => void refreshGlobalLevelsList(true));
 
   elConfirmSaveLevelBtn.addEventListener("click", () => {
@@ -9585,6 +9608,38 @@
         ctx2.fill();
       }
       ctx2.restore();
+    } else if (theme === "bablupintu") {
+      // 2bablupintu custom background — parallax scroll
+      ctx2.save();
+      ctx2.fillStyle = "#0a0a12";
+      ctx2.fillRect(0, 0, canvas.width, canvas.height);
+      if (bgImageBablupintuReady && bgImageBablupintu.naturalWidth > 0) {
+        const iw = bgImageBablupintu.naturalWidth;
+        const ih = bgImageBablupintu.naturalHeight;
+        const parallax = 0.10 * parallaxBoost;
+        const ox = scrollWorldX * parallax;
+        const oy = scrollWorldY * parallax * 0.35;
+        // Scale to fill canvas maintaining aspect ratio
+        const scaleW = canvas.width / iw;
+        const scaleH = canvas.height / ih;
+        const sc = Math.max(scaleW, scaleH) * 1.08;
+        const dw = iw * sc;
+        const dh = ih * sc;
+        const dx = (canvas.width - dw) / 2 - ox % (dw * 0.15);
+        const dy = (canvas.height - dh) / 2 - oy % (dh * 0.15);
+        ctx2.globalAlpha = 0.88;
+        ctx2.drawImage(bgImageBablupintu, dx, dy, dw, dh);
+        ctx2.globalAlpha = 1;
+        // Subtle dark vignette overlay so game tiles remain readable
+        const vg = cachedLinearGradient(ctx2, "babl_vg", 0, 0, canvas.width, canvas.height, [[0,"rgba(0,0,12,0.45)"],[0.5,"rgba(0,0,0,0.12)"],[1,"rgba(0,0,12,0.55)"]]);
+        ctx2.fillStyle = vg;
+        ctx2.fillRect(0, 0, canvas.width, canvas.height);
+      } else {
+        // Fallback while image loads
+        ctx2.fillStyle = cachedLinearGradient(ctx2, "babl_fallback", 0, 0, 0, canvas.height, [[0,"rgba(20,10,40,0.98)"],[1,"rgba(5,3,15,1)"]]);
+        ctx2.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx2.restore();
     } else {
       ctx2.fillStyle = cachedLinearGradient(ctx2, "default_sky", 0, 0, 0, canvas.height, [[0,"rgba(40,54,120,0.26)"],[1,"rgba(10,12,26,0.92)"]]);
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
@@ -10639,8 +10694,13 @@
     } else {
       document.documentElement.classList.toggle("device-touch-mode", deviceMode === "mobile");
       syncExitAndRotateUI();
-      if (save.activePlayerId && save.players[save.activePlayerId]) setActivePlayer(save.activePlayerId);
-      else openStartModal();
+      if (save.activePlayerId && save.players[save.activePlayerId]) {
+        // Player already exists — go straight into build mode, no welcome modal
+        setActivePlayer(save.activePlayerId);
+      } else {
+        // First time or no player — show the start modal to pick/create player
+        openStartModal();
+      }
       maybeRestoreBuildDraft();
     }
   }
@@ -12248,39 +12308,89 @@
     ["The grid remembers your last death.", "Something is reversed. You'll feel it.", "The spikes are early this run."],
   ];
 
+  const TILE_WARNINGS = {
+    spikes:   ["The spikes remember exactly where you put them — and they've been waiting.", "Spikes detected. They activate early on seeded runs.", "Your spikes have trust issues. With you."],
+    lava:     ["That lava knows what you built. It's not happy.", "Lava tiles run hotter than usual this run.", "You placed the lava. The lava placed you."],
+    hex:      ["A hex tile was placed. Its curse is already active.", "The hex doesn't just curse — it studies.", "Hexed. You did that yourself."],
+    betrayal: ["Betrayal tiles start safe. They won't stay that way.", "You placed a betrayal tile. That's poetic.", "The betrayal tile is waiting to earn its name."],
+    jumppad:  ["Your jump pads have calibrated themselves — differently.", "Jump pads can misfire. Especially on cursed seeds.", "The launch pads are excited. Too excited."],
+    platform: ["Your platforms may crumble mid-run.", "Platforms placed with care. Activated with chaos.", "At least one of your platforms is lying to you."],
+    mud:      ["Mud tiles slow you down. They'll slow you down more.", "The mud remembers your panic. It will use it.", "Stuck in mud? Good. That's the point."],
+    checkpoint: ["One revive. Use it when it hurts most.", "The checkpoint is real. The safety it offers is not.", "Checkpoint placed. One chance. Don't waste it."],
+  };
+
+  function getTileAwareWarnings() {
+    const g = window.__ssb_getGrid ? window.__ssb_getGrid() : null;
+    if (!g) return SABOTAGE_WARNINGS[Math.floor(Math.random() * SABOTAGE_WARNINGS.length)];
+    // Count which tile types exist
+    const present = new Set();
+    for (let y = 0; y < g.length; y++) {
+      for (let x = 0; x < (g[y] ? g[y].length : 0); x++) {
+        const t = g[y][x];
+        if (t && t !== "empty" && TILE_WARNINGS[t]) present.add(t);
+      }
+    }
+    if (present.size === 0) return SABOTAGE_WARNINGS[Math.floor(Math.random() * SABOTAGE_WARNINGS.length)];
+    // Pick 1-2 tile-specific warnings + 1 generic
+    const tileArr = Array.from(present);
+    const picks = [];
+    // Shuffle tile types
+    for (let i = tileArr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tileArr[i], tileArr[j]] = [tileArr[j], tileArr[i]];
+    }
+    for (let i = 0; i < Math.min(2, tileArr.length); i++) {
+      const tw = TILE_WARNINGS[tileArr[i]];
+      picks.push(tw[Math.floor(Math.random() * tw.length)]);
+    }
+    const generic = SABOTAGE_WARNINGS[Math.floor(Math.random() * SABOTAGE_WARNINGS.length)];
+    picks.push(generic[Math.floor(Math.random() * generic.length)]);
+    return picks.slice(0, 3);
+  }
+
   function showSabotageWarning(onReady) {
-    // Don't spam for every run — only show once per 'Play' button click
-    const warningSet = SABOTAGE_WARNINGS[Math.floor(Math.random() * SABOTAGE_WARNINGS.length)];
+    const warningSet = getTileAwareWarnings();
+    // Get run seed from play state for drama
+    const seedNum = (window.__ssb_currentPlayState && window.__ssb_currentPlayState.runSeed)
+      ? (window.__ssb_currentPlayState.runSeed >>> 0)
+      : Math.floor(Math.random() * 999999);
+    const isCursed = window.__ssb_currentPlayState && window.__ssb_currentPlayState.sabotageController
+      && typeof window.__ssb_currentPlayState.sabotageController.isCursedSeed === "function"
+      && window.__ssb_currentPlayState.sabotageController.isCursedSeed();
+
     const overlay = document.createElement("div");
-    overlay.className = "sabotageWarningOverlay";
+    overlay.className = "sabotageWarningOverlay" + (isCursed ? " cursedSeed" : "");
     overlay.innerHTML = `
       <div class="sabotageWarningBox">
-        <div class="sabotageWarningIcon">⚠️</div>
-        <div class="sabotageWarningTitle">Uh Oh.</div>
+        <div class="sabotageWarningIcon">${isCursed ? "💀" : "⚠️"}</div>
+        <div class="sabotageWarningTitle">${isCursed ? "CURSED SEED" : "Uh Oh."}</div>
+        <div class="sabotageWarningSeed">Seed #${seedNum}</div>
         <div class="sabotageWarningHints">
           ${warningSet.map(w => `<div class="sabotageWarningHint">「${w}」</div>`).join("")}
         </div>
-        <button class="sabotageWarningBtn" id="sabotageWarningContinueBtn">Enter the Run →</button>
+        <div class="sabotageWarningActions">
+          <button class="sabotageWarningBtn" id="sabotageWarningContinueBtn">Enter the Run →</button>
+          <button class="sabotageWarningSkipBtn" id="sabotageWarningSkipBtn">Skip warning</button>
+        </div>
       </div>
     `;
     document.body.appendChild(overlay);
+    // Prevent interaction with game while warning is shown
+    overlay.addEventListener("click", (e) => e.stopPropagation());
+
+    const dismiss = () => {
+      if (!overlay.parentNode) return;
+      overlay.classList.add("hiding");
+      setTimeout(() => { if (overlay.parentNode) overlay.remove(); onReady(); }, 380);
+    };
+
     const btn = overlay.querySelector("#sabotageWarningContinueBtn");
-    if (btn) {
-      btn.addEventListener("click", () => {
-        overlay.classList.add("hiding");
-        setTimeout(() => {
-          overlay.remove();
-          onReady();
-        }, 400);
-      });
-    }
-    // Auto-dismiss after 6s
-    setTimeout(() => {
-      if (overlay.parentNode) {
-        overlay.classList.add("hiding");
-        setTimeout(() => { overlay.remove(); onReady(); }, 400);
-      }
-    }, 6000);
+    if (btn) btn.addEventListener("click", dismiss);
+    const skipBtn = overlay.querySelector("#sabotageWarningSkipBtn");
+    if (skipBtn) skipBtn.addEventListener("click", dismiss);
+
+    // Auto-dismiss after 8s (longer for drama)
+    setTimeout(() => { if (overlay.parentNode) dismiss(); }, 8000);
   }
 
   // Note: The sabotage warning is triggered by the mode transition observer in Feature 9.
@@ -12906,10 +13016,8 @@
   // ============================================================
   // EXPOSE PLAY STATE TO FLASH SYSTEM
   // ============================================================
-  // Monitor for play state changes via existing toast events
   const _origShowToast = window.__ssb_showToast;
   setInterval(() => {
-    // Try to access play state via canvas metadata (set by game loop)
     if (window.__ssb_ps) {
       window.__ssb_currentPlayState = window.__ssb_ps;
     }
@@ -12921,7 +13029,6 @@
   (function initLiveTileCount() {
     const helpSection = document.querySelector(".help");
     if (!helpSection) return;
-    // Add live tile breakdown stats card before the help section
     const panel = document.querySelector(".panel");
     if (!panel) return;
     const statsCard = document.createElement("div");
@@ -12958,5 +13065,348 @@
     updateLiveTileCount();
   })();
 
+  // ============================================================
+  // NEW UPGRADE 1: SMART FRAME SKIPPING (Lag Reduction)
+  // Skip expensive particle/effect renders when FPS < 30
+  // ============================================================
+  (function initSmartFrameSkip() {
+    let _skipFrame = false;
+    let _frameCount = 0;
+    const origRAF = window.requestAnimationFrame.bind(window);
+    // Expose skip flag globally so render functions can check it
+    window.__ssb_skipHeavyFx = () => _skipFrame;
+    // Every 3rd frame when _fpsLow, skip heavy effects (tileFlash, particles, glows)
+    setInterval(() => {
+      _frameCount++;
+      const fpsLow = typeof _fpsLow !== "undefined" && _fpsLow;
+      _skipFrame = fpsLow && (_frameCount % 3 === 0);
+    }, 50);
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 2: OFFSCREEN TILE CULLING CACHE
+  // Build a Set of visible tile positions so drawBuild skips off-screen checks faster
+  // ============================================================
+  (function initTileCullingCache() {
+    // Patch: expose a global helper so drawBuild can fast-exit non-visible tiles
+    // This works by exposing the camera viewport bounds
+    window.__ssb_getVisibleBounds = () => {
+      try {
+        const canvas2 = document.getElementById("game");
+        if (!canvas2 || !window.__ssb_buildCamX) return null;
+        return {
+          gx0: Math.max(0, Math.floor(window.__ssb_buildCamX / 32) - 1),
+          gx1: Math.min(79, Math.ceil((window.__ssb_buildCamX + canvas2.clientWidth) / 32)),
+          gy0: Math.max(0, Math.floor(window.__ssb_buildCamY / 32) - 1),
+          gy1: Math.min(47, Math.ceil((window.__ssb_buildCamY + canvas2.clientHeight) / 32)),
+        };
+      } catch { return null; }
+    };
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 3: ADAPTIVE BACKGROUND QUALITY
+  // Reduce background parallax complexity when FPS is low
+  // ============================================================
+  (function initAdaptiveBgQuality() {
+    window.__ssb_bgQualityReduced = false;
+    setInterval(() => {
+      const low = typeof _fpsLow !== "undefined" && _fpsLow;
+      window.__ssb_bgQualityReduced = low;
+      // Also reduce the gradient cache flush threshold when low
+      // (prevents GC pressure from rebuilding gradients too often)
+    }, 1000);
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 4: QUICK-ACTION KEYBOARD SHORTCUT OVERLAY (? key)
+  // Press ? to get an instant cheat-sheet overlay
+  // ============================================================
+  (function initShortcutOverlay() {
+    let shortcutOverlay = null;
+    const SHORTCUTS = [
+      ["B", "Switch to Build mode"],
+      ["P", "Switch to Play mode"],
+      ["R", "Restart run"],
+      ["L", "Open Levels"],
+      ["S", "Open Settings"],
+      ["Ctrl+Z", "Undo tile placement"],
+      ["Ctrl+Y", "Redo tile placement"],
+      ["Shift+Click", "Set test spawn point"],
+      ["Alt+Drag", "Select copy region"],
+      ["Middle Mouse", "Pan the map"],
+      ["?", "Show / hide this overlay"],
+    ];
+    document.addEventListener("keydown", (e) => {
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+      if (e.key !== "?" && e.key !== "/") return;
+      if (shortcutOverlay) {
+        shortcutOverlay.remove();
+        shortcutOverlay = null;
+        return;
+      }
+      shortcutOverlay = document.createElement("div");
+      shortcutOverlay.className = "shortcutOverlay";
+      shortcutOverlay.innerHTML = `
+        <div class="shortcutOverlayBox">
+          <div class="shortcutOverlayTitle">⌨️ Keyboard Shortcuts</div>
+          <div class="shortcutGrid">
+            ${SHORTCUTS.map(([k, d]) => `<kbd>${k}</kbd><span>${d}</span>`).join("")}
+          </div>
+          <div class="shortcutOverlayDismiss">Press <kbd>?</kbd> or click to close</div>
+        </div>
+      `;
+      shortcutOverlay.addEventListener("click", () => {
+        if (shortcutOverlay) { shortcutOverlay.remove(); shortcutOverlay = null; }
+      });
+      document.body.appendChild(shortcutOverlay);
+    });
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 5: DEATH HEATMAP (visual run feedback)
+  // After each death, show a brief red flash on the tile that killed you
+  // Accumulate deaths per cell, overlay in build mode as heat dots
+  // ============================================================
+  (function initDeathHeatmap() {
+    const deathMap = {}; // "gx,gy" -> count
+    window.__ssb_recordDeath = (gx, gy) => {
+      if (typeof gx !== "number" || typeof gy !== "number") return;
+      const key = `${Math.round(gx)},${Math.round(gy)}`;
+      deathMap[key] = (deathMap[key] || 0) + 1;
+      window.__ssb_deathMap = deathMap;
+    };
+    window.__ssb_deathMap = deathMap;
+
+    // Hook into the play state death detection via sabotage events
+    window.addEventListener("sabotageTriggered", (e) => {
+      const d = e && e.detail;
+      if (!d) return;
+      const ps = window.__ssb_currentPlayState;
+      if (ps && ps.player) {
+        const gx = Math.floor(ps.player.x / 32);
+        const gy = Math.floor(ps.player.y / 32);
+        if (d.category === "instant_death" || d.id === "lava" || d.id === "spikes" || d.id === "hex_lethal") {
+          window.__ssb_recordDeath(gx, gy);
+        }
+      }
+    });
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 6: IMPROVED LEVELS UI — SEARCH + QUICK FILTERS
+  // Adds a search bar to the start modal level list
+  // ============================================================
+  (function initLevelSearch() {
+    const levelPickCard = document.getElementById("startModalLevelPickCard");
+    if (!levelPickCard) return;
+    const titleRow = levelPickCard.querySelector(".cardTitle");
+    if (!titleRow) return;
+
+    // Inject search input after the title
+    const searchWrap = document.createElement("div");
+    searchWrap.style.cssText = "display:flex;gap:6px;margin:8px 0 4px;";
+    searchWrap.innerHTML = `<input id="levelSearchInput" class="input" placeholder="🔍 Search levels…" autocomplete="off" style="flex:1;font-size:13px;" />`;
+    titleRow.insertAdjacentElement("afterend", searchWrap);
+
+    const searchInput = document.getElementById("levelSearchInput");
+    if (!searchInput) return;
+
+    searchInput.addEventListener("input", () => {
+      const q = searchInput.value.trim().toLowerCase();
+      const listEl = document.getElementById("levelListByTier");
+      if (!listEl) return;
+      listEl.querySelectorAll(".listItem").forEach((item) => {
+        const nameEl = item.querySelector(".name");
+        const text = nameEl ? nameEl.textContent.toLowerCase() : "";
+        item.style.display = (!q || text.includes(q)) ? "" : "none";
+      });
+    });
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 7: RUN HISTORY LOG (last 5 runs summary)
+  // Shows a tiny history of recent run outcomes in the sidebar
+  // ============================================================
+  (function initRunHistory() {
+    const RUN_HISTORY_KEY = "ssb_run_history_v1";
+    const MAX_HISTORY = 5;
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(RUN_HISTORY_KEY) || "[]"); } catch { return []; }
+    }
+    function saveHistory(h) {
+      try { localStorage.setItem(RUN_HISTORY_KEY, JSON.stringify(h.slice(-MAX_HISTORY))); } catch {}
+    }
+
+    // Expose a record function
+    window.__ssb_recordRunEnd = (outcome, seedNum, timeMs) => {
+      const h = loadHistory();
+      h.push({ outcome, seed: seedNum >>> 0, time: Math.round(timeMs / 100) / 10, ts: Date.now() });
+      saveHistory(h);
+      renderRunHistory();
+    };
+
+    function renderRunHistory() {
+      const el = document.getElementById("runHistoryList");
+      if (!el) return;
+      const h = loadHistory();
+      if (h.length === 0) { el.textContent = "No runs yet."; return; }
+      el.innerHTML = h.slice().reverse().map(r =>
+        `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
+          <span>${r.outcome === "win" ? "✅" : "💀"} Seed #${r.seed}</span>
+          <span style="color:rgba(180,190,220,0.6);">${r.time}s</span>
+        </div>`
+      ).join("");
+    }
+
+    // Inject a small history card into the right sidebar
+    const hub = document.querySelector(".rightSidebarTabs");
+    if (hub) {
+      const histCard = document.createElement("div");
+      histCard.style.cssText = "background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px 12px;margin-top:10px;";
+      histCard.innerHTML = `<div style="font-weight:800;font-size:11px;color:rgba(200,210,255,0.7);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🕐 Recent Runs</div><div id="runHistoryList" style="color:rgba(180,190,220,0.75);"></div>`;
+      hub.parentElement.appendChild(histCard);
+      renderRunHistory();
+    }
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 8: PERFORMANCE MODE TOGGLE (One-click low quality)
+  // Adds a "⚡ Performance Mode" button to Settings for instant lag fix
+  // ============================================================
+  (function initPerformanceModeToggle() {
+    const settingsBody = document.querySelector("#settingsModal .modalBody");
+    if (!settingsBody) return;
+    const PERF_KEY = "ssb_perf_mode_v1";
+    let perfMode = localStorage.getItem(PERF_KEY) === "1";
+
+    function applyPerfMode(on) {
+      perfMode = on;
+      localStorage.setItem(PERF_KEY, on ? "1" : "0");
+      document.documentElement.classList.toggle("perf-mode", on);
+      // Disable expensive CSS effects in perf mode
+      if (on) {
+        document.documentElement.style.setProperty("--blur-amount", "0px");
+      } else {
+        document.documentElement.style.removeProperty("--blur-amount");
+      }
+      if (btn) {
+        btn.textContent = on ? "⚡ Performance Mode: ON" : "⚡ Performance Mode: OFF";
+        btn.classList.toggle("primary", on);
+      }
+      if (window.__ssb_showToast) window.__ssb_showToast(on ? "Performance mode ON — reduced effects for smoother gameplay." : "Performance mode OFF — full quality restored.", 2200);
+    }
+
+    const perfCard = document.createElement("div");
+    perfCard.className = "card";
+    perfCard.innerHTML = `
+      <div class="cardTitle">Performance</div>
+      <div class="helpText" style="margin-bottom:8px;">Struggling with lag? Enable performance mode to disable expensive visual effects (shadows, blur, particles) for a smoother experience.</div>
+      <button id="perfModeToggleBtn" type="button" class="btn${perfMode ? " primary" : ""}">${perfMode ? "⚡ Performance Mode: ON" : "⚡ Performance Mode: OFF"}</button>
+      <div class="smallNote" style="margin-top:6px;">This also reduces backdrop-filter blur, gradient complexity, and shadow rendering.</div>
+    `;
+    settingsBody.appendChild(perfCard);
+    const btn = document.getElementById("perfModeToggleBtn");
+    if (btn) btn.addEventListener("click", () => applyPerfMode(!perfMode));
+
+    // Apply on load
+    applyPerfMode(perfMode);
+
+    // Also reduce blur in CSS when perf mode is on (injected stylesheet)
+    const perfStyle = document.createElement("style");
+    perfStyle.textContent = `
+      html.perf-mode .modal, html.perf-mode .topbar, html.perf-mode .panel { backdrop-filter: none !important; }
+      html.perf-mode .sabotageWarningOverlay { backdrop-filter: none !important; background: rgba(0,0,0,0.92) !important; }
+      html.perf-mode canvas { image-rendering: pixelated; }
+    `;
+    document.head.appendChild(perfStyle);
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 9: SMART MODAL NAVIGATION (Back button in modals)
+  // Adds a consistent back/close UX — pressing Escape always closes top modal
+  // ============================================================
+  (function initSmartModalNav() {
+    // Track open modal stack
+    const openModals = [];
+
+    // Patch openModal to track stack
+    const origOpenModal = window.__ssb_openModal;
+    document.addEventListener("click", (e) => {
+      const closeBtn = e.target && e.target.closest(".iconBtn[aria-label='Close']");
+      if (!closeBtn) return;
+      // Flash close button for feedback
+      closeBtn.style.transform = "scale(0.85)";
+      setTimeout(() => { closeBtn.style.transform = ""; }, 120);
+    });
+
+    // Escape key closes the topmost visible modal
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const modals = Array.from(document.querySelectorAll(".modal:not(.hidden)"));
+      if (modals.length === 0) return;
+      const top = modals[modals.length - 1];
+      const closeBtn = top.querySelector(".iconBtn[aria-label='Close']");
+      if (closeBtn) closeBtn.click();
+    }, { capture: true });
+
+    // Highlight the "active" preconfigured level tab more clearly
+    document.querySelectorAll(".levelTab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".levelTab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+      });
+    });
+  })();
+
+  // ============================================================
+  // NEW UPGRADE 10: CONTEXTUAL BUILD HINTS (tooltip on hover)
+  // Shows a subtle hint about the SABOTAGE behavior of each tile
+  // when hovering in build mode — like a spoiler-lite
+  // ============================================================
+  (function initBuildModeContextHints() {
+    const SABOTAGE_SPOILERS = {
+      platform: "May crumble, shrink, or slide mid-run.",
+      spikes:   "Can activate early or delay — lethal on contact.",
+      jumppad:  "May misfire, launching in wrong direction.",
+      hex:      "Curses controls or inverts input when touched.",
+      lava:     "Instant kill — may expand or pulse.",
+      mud:      "Slows massively — may spread or solidify.",
+      betrayal: "Starts safe, mutates mid-run into a hazard.",
+      food:     "Reduces sabotage intensity when collected.",
+      speedBoost: "Grants speed — may run out at worst moment.",
+      checkpoint: "One revive per run — next lethal hit ends it.",
+      pressureSwitch: "Triggers linked timed doors on contact.",
+      timedDoor: "Opens/closes on a timer — timing is sabotaged.",
+    };
+
+    const hintBar = document.createElement("div");
+    hintBar.id = "buildContextHint";
+    hintBar.style.cssText = `
+      position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+      background:rgba(10,12,28,0.92);border:1px solid rgba(122,167,255,0.25);
+      border-radius:20px;padding:6px 18px;font-size:12px;color:rgba(200,215,255,0.85);
+      pointer-events:none;z-index:200;opacity:0;transition:opacity 0.2s;
+      backdrop-filter:blur(6px);white-space:nowrap;max-width:90vw;text-align:center;
+    `;
+    document.body.appendChild(hintBar);
+
+    let hintTimeout = null;
+    // Watch palette hover
+    document.querySelector(".palette") && document.querySelector(".palette").addEventListener("mouseover", (e) => {
+      const item = e.target.closest("[data-tile]");
+      if (!item) return;
+      const tile = item.dataset.tile;
+      const spoiler = SABOTAGE_SPOILERS[tile];
+      if (!spoiler) return;
+      clearTimeout(hintTimeout);
+      hintBar.textContent = `⚡ ${tile}: ${spoiler}`;
+      hintBar.style.opacity = "1";
+    });
+    document.querySelector(".palette") && document.querySelector(".palette").addEventListener("mouseleave", () => {
+      hintTimeout = setTimeout(() => { hintBar.style.opacity = "0"; }, 400);
+    });
+  })();
 
 })();

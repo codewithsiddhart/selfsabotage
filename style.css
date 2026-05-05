@@ -3297,3 +3297,121 @@ html[data-theme="light"] .announcementModalContent a {
 /* Animations shared */
 @keyframes fadeIn { from{opacity:0} to{opacity:1} }
 @keyframes fadeOut { from{opacity:1} to{opacity:0} }
+
+/* ============================================================
+   UPGRADE CSS: Sabotage Warning Enhancements
+   ============================================================ */
+.sabotageWarningSeed {
+  font-size: 11px;
+  color: rgba(255,180,150,0.55);
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+  font-family: monospace;
+}
+.sabotageWarningActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sabotageWarningSkipBtn {
+  background: none;
+  border: none;
+  color: rgba(255,200,180,0.4);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 8px;
+  transition: color 0.15s;
+}
+.sabotageWarningSkipBtn:hover { color: rgba(255,200,180,0.75); }
+.sabotageWarningOverlay.cursedSeed .sabotageWarningBox {
+  border-color: rgba(200,60,255,0.6);
+  box-shadow: 0 0 80px rgba(180,40,255,0.3), 0 20px 60px rgba(0,0,0,0.9);
+}
+.sabotageWarningOverlay.cursedSeed .sabotageWarningTitle { color: #c060ff; }
+.sabotageWarningOverlay.cursedSeed .sabotageWarningIcon { filter: drop-shadow(0 0 12px rgba(180,40,255,0.8)); }
+
+/* ============================================================
+   Quick Levels button in topbar
+   ============================================================ */
+.quickLevelsBtn {
+  background: linear-gradient(135deg, rgba(110,168,255,0.18), rgba(139,155,255,0.12));
+  border-color: rgba(110,168,255,0.35);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.quickLevelsBtn:hover {
+  background: linear-gradient(135deg, rgba(110,168,255,0.28), rgba(139,155,255,0.2));
+  border-color: rgba(110,168,255,0.55);
+}
+
+/* ============================================================
+   Keyboard Shortcut Overlay (? key)
+   ============================================================ */
+.shortcutOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.78);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.15s ease;
+  cursor: pointer;
+}
+.shortcutOverlayBox {
+  background: rgba(16,22,40,0.97);
+  border: 1px solid rgba(122,167,255,0.3);
+  border-radius: 18px;
+  padding: 28px 36px;
+  max-width: 480px;
+  width: 92%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+}
+.shortcutOverlayTitle {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--accent);
+  margin-bottom: 18px;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+.shortcutGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.shortcutGrid kbd {
+  background: rgba(122,167,255,0.12);
+  border: 1px solid rgba(122,167,255,0.28);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.shortcutGrid span { font-size: 13px; color: var(--muted); }
+.shortcutOverlayDismiss { text-align: center; font-size: 12px; color: rgba(180,190,220,0.4); }
+.shortcutOverlayDismiss kbd {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+/* ============================================================
+   Responsive tweaks — hide quickLevelsBtn on very narrow screens
+   ============================================================ */
+@media (max-width: 520px) {
+  .quickLevelsBtn { display: none; }
+}
+
