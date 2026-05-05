@@ -2931,3 +2931,369 @@ html[data-theme="light"] .announcementModalContent a {
     display: revert !important;
   }
 }
+
+/* ===================================================
+   FEATURE ADDITIONS — All 10 New Features
+   =================================================== */
+
+/* 1. Pre-play sabotage warning banner */
+.sabotageWarningOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(6px);
+  animation: fadeIn 0.2s ease;
+}
+.sabotageWarningOverlay.hiding {
+  animation: fadeOut 0.4s ease forwards;
+}
+.sabotageWarningBox {
+  background: linear-gradient(135deg, #1a0a0a 0%, #1e0f0f 100%);
+  border: 1.5px solid rgba(255,60,60,0.5);
+  border-radius: 18px;
+  padding: 32px 40px;
+  max-width: 440px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(255,40,40,0.25), 0 20px 60px rgba(0,0,0,0.8);
+  animation: warningPulse 2s ease-in-out infinite;
+}
+@keyframes warningPulse {
+  0%,100% { box-shadow: 0 0 40px rgba(255,40,40,0.2), 0 20px 60px rgba(0,0,0,0.8); }
+  50% { box-shadow: 0 0 80px rgba(255,40,40,0.4), 0 20px 60px rgba(0,0,0,0.8); }
+}
+.sabotageWarningIcon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  animation: iconPulse 1s ease-in-out infinite;
+}
+@keyframes iconPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
+.sabotageWarningTitle {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ff4444;
+  margin-bottom: 18px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.sabotageWarningHints {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.sabotageWarningHint {
+  background: rgba(255,60,60,0.08);
+  border: 1px solid rgba(255,60,60,0.2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: rgba(255,220,200,0.9);
+  font-style: italic;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateX(-20px);
+  animation: slideInHint 0.4s ease forwards;
+}
+.sabotageWarningHint:nth-child(1) { animation-delay: 0.3s; }
+.sabotageWarningHint:nth-child(2) { animation-delay: 0.6s; }
+.sabotageWarningHint:nth-child(3) { animation-delay: 0.9s; }
+@keyframes slideInHint {
+  to { opacity:1; transform:translateX(0); }
+}
+.sabotageWarningBtn {
+  background: linear-gradient(135deg, #c0392b, #e74c3c);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 32px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: transform 0.15s, opacity 0.15s;
+  opacity: 0;
+  animation: fadeIn 0.3s ease 1.2s forwards;
+}
+.sabotageWarningBtn:hover { transform: scale(1.05); }
+
+/* 2. Tile flash/glow on sabotage activation */
+.tileFlashCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* 3. Run debrief screen */
+.runDebriefPanel {
+  background: rgba(20,10,10,0.95);
+  border: 1px solid rgba(255,80,80,0.3);
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-top: 12px;
+  text-align: left;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.runDebriefTitle {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255,120,120,0.9);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+}
+.runDebriefItem {
+  font-size: 12px;
+  color: rgba(255,200,180,0.8);
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,60,60,0.1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.runDebriefItem:last-child { border-bottom: none; }
+.runDebriefDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 4. Tile rarity badges in palette */
+.tileRarityBadge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+  display: inline-block;
+}
+.tileRarity-safe { background: rgba(45,212,91,0.2); color: #2dd45b; border: 1px solid rgba(45,212,91,0.4); }
+.tileRarity-common { background: rgba(148,163,184,0.2); color: #94a3b8; border: 1px solid rgba(148,163,184,0.4); }
+.tileRarity-risky { background: rgba(251,146,60,0.2); color: #fb923c; border: 1px solid rgba(251,146,60,0.4); }
+.tileRarity-deadly { background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
+
+/* 5. Win streak counter HUD */
+.streakCounter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(255,140,0,0.15), rgba(255,60,0,0.1));
+  border: 1px solid rgba(255,140,0,0.35);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #ff8c00;
+  transition: all 0.3s ease;
+  cursor: default;
+}
+.streakCounter.hidden { display: none; }
+.streakCounter.streakBurning {
+  background: linear-gradient(135deg, rgba(255,60,0,0.25), rgba(255,0,0,0.15));
+  border-color: rgba(255,60,0,0.6);
+  color: #ff4400;
+  animation: streakBurn 0.8s ease-in-out infinite;
+}
+@keyframes streakBurn {
+  0%,100% { box-shadow: 0 0 8px rgba(255,100,0,0.3); }
+  50% { box-shadow: 0 0 20px rgba(255,60,0,0.6); }
+}
+.streakFire {
+  font-size: 16px;
+  animation: fireWiggle 0.5s ease-in-out infinite alternate;
+}
+@keyframes fireWiggle { from{transform:rotate(-8deg)} to{transform:rotate(8deg)} }
+.streakNumber { font-size: 16px; font-weight: 900; }
+.streakBreakFlash {
+  position: fixed;
+  inset: 0;
+  background: rgba(255,0,0,0.18);
+  pointer-events: none;
+  z-index: 8000;
+  animation: streakBreakAnim 0.5s ease forwards;
+}
+@keyframes streakBreakAnim {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 6. Saboteur's Choice UI (Multiplayer) */
+.saboteurChoicePanel {
+  background: linear-gradient(135deg, rgba(90,0,160,0.9), rgba(40,0,80,0.9));
+  border: 1.5px solid rgba(180,0,255,0.5);
+  border-radius: 16px;
+  padding: 18px;
+  margin-top: 10px;
+  box-shadow: 0 0 30px rgba(160,0,255,0.25);
+}
+.saboteurChoiceTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: #d946ef;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.saboteurChoiceGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.saboteurChoiceBtn {
+  background: rgba(180,0,255,0.12);
+  border: 1px solid rgba(180,0,255,0.3);
+  border-radius: 10px;
+  color: rgba(220,180,255,0.9);
+  padding: 10px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+.saboteurChoiceBtn:hover {
+  background: rgba(180,0,255,0.25);
+  border-color: rgba(180,0,255,0.6);
+  transform: scale(1.03);
+}
+.saboteurChoiceBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+.saboteurCooldownBar {
+  height: 4px;
+  background: rgba(180,0,255,0.15);
+  border-radius: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+.saboteurCooldownFill {
+  height: 100%;
+  background: linear-gradient(90deg, #a855f7, #d946ef);
+  border-radius: 4px;
+  transition: width 0.1s linear;
+}
+
+/* 7. Contextual tooltip system */
+.tileTooltip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  background: rgba(15,10,25,0.97);
+  border: 1px solid rgba(100,100,255,0.35);
+  border-radius: 12px;
+  padding: 12px 16px;
+  max-width: 220px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.tileTooltip.visible { opacity: 1; }
+.tileTooltipName {
+  font-size: 14px;
+  font-weight: 800;
+  color: #e2e8ff;
+  margin-bottom: 4px;
+}
+.tileTooltipHint {
+  font-size: 12px;
+  color: rgba(180,190,220,0.85);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.tileTooltipRarity {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 8. Level share panel */
+.shareLevelPanel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+.shareUrlInput {
+  flex: 1;
+  min-width: 160px;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(100,100,255,0.3);
+  background: rgba(255,255,255,0.06);
+  color: inherit;
+  font-family: monospace;
+}
+#qrCodeCanvas {
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px;
+}
+
+/* 9. Sabotage reveal transition */
+.sabotageRevealOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8500;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255,40,40,0.35) 0%, rgba(0,0,0,0) 70%);
+  opacity: 0;
+  animation: sabotageReveal 0.7s ease forwards;
+}
+@keyframes sabotageReveal {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  60% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+.sabotageRevealFlicker {
+  animation: sabotageReveal 0.7s ease forwards, flickerText 0.5s ease;
+}
+@keyframes flickerText {
+  0%,100%{opacity:1} 20%{opacity:0.3} 40%{opacity:1} 60%{opacity:0.5} 80%{opacity:1}
+}
+
+/* 10. Star rating for community levels */
+.starRatingRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.starBtn {
+  font-size: 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s;
+  line-height: 1;
+  padding: 2px;
+  color: rgba(180,180,180,0.5);
+}
+.starBtn.active { color: #f59e0b; }
+.starBtn:hover { transform: scale(1.25); color: #fcd34d; }
+.starRatingCount {
+  font-size: 11px;
+  color: rgba(180,180,180,0.6);
+  margin-left: 4px;
+}
+.levelRatingStars {
+  display: inline-flex;
+  gap: 2px;
+  font-size: 14px;
+}
+
+/* Animations shared */
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+@keyframes fadeOut { from{opacity:1} to{opacity:0} }

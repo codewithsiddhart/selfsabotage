@@ -387,15 +387,32 @@
   /** Set from `profiles.is_admin` when signed in; combined with hardcoded admin emails in syncAdminUiForCurrentUser. */
   let profileIsAdminFromDb = false;
   let profileIsModFromDb = false;
-  let userEquippedCosmeticId = /** @type {string|null} */ (null);
-  /** @type {Set<string>} */
+  const AvatarManager = (() => {
+    let equippedCosmeticId = null;
+    let ownedCosmetics = new Set();
+    let shopAssetsPrimed = false;
+    const processedDataUrl = new Map();
+    const renderImageCache = new Map();
+    return {
+      getEquippedId() { return equippedCosmeticId; },
+      setEquippedId(id) { equippedCosmeticId = id == null ? null : String(id).trim() || null; },
+      getOwned() { return ownedCosmetics; },
+      setOwned(set) { ownedCosmetics = set instanceof Set ? set : new Set(set); },
+      addOwned(id) { ownedCosmetics.add(String(id)); },
+      isOwned(id) { return ownedCosmetics.has(String(id)); },
+      isShopPrimed() { return shopAssetsPrimed; },
+      markShopPrimed() { shopAssetsPrimed = true; },
+      getDataUrl(id) { return processedDataUrl.get(id); },
+      setDataUrl(id, url) { processedDataUrl.set(id, url); },
+      getRenderImage(id) { return renderImageCache.get(id); },
+      setRenderImage(id, img) { renderImageCache.set(id, img); },
+    };
+  })();
+  let userEquippedCosmeticId = null;
   let userOwnedCosmetics = new Set();
-  /** After first full shop prime (modal open); avoids decoding all avatars at cold start. */
   let avatarShopAssetsPrimed = false;
-  /** @type {Map<string, string>} */
-  const avatarProcessedDataUrl = new Map();
-  /** @type {Map<string, HTMLImageElement>} */
-  const avatarRenderImageCache = new Map();
+  const avatarProcessedDataUrl = { get: (k) => AvatarManager.getDataUrl(k), set: (k,v) => AvatarManager.setDataUrl(k,v), has: (k) => AvatarManager.getDataUrl(k) != null };
+  const avatarRenderImageCache = { get: (k) => AvatarManager.getRenderImage(k), set: (k,v) => AvatarManager.setRenderImage(k,v) };
   let rightSidebarTab = "coins";
 
   /** Simple placeholder preview when no shop skin is equipped (matches in-game default ghost vibe). */
@@ -579,10 +596,11 @@
       {
         const rawEq = prof && prof.equipped_cosmetic_id;
         const es = rawEq != null ? String(rawEq).trim() : "";
-        if (!es) userEquippedCosmeticId = null;
+        if (!es) { userEquippedCosmeticId = null; AvatarManager.setEquippedId(null); }
         else {
           const av = avatarById(es);
           userEquippedCosmeticId = av ? av.id : es;
+          AvatarManager.setEquippedId(userEquippedCosmeticId);
         }
       }
       profileIsAdminFromDb = !!(prof && prof.is_admin);
@@ -597,6 +615,7 @@
       if (oErr) logSupabaseError("user_owned_cosmetics.select", oErr, {});
       else if (Array.isArray(owned)) for (const r of owned) if (r && r.cosmetic_id) userOwnedCosmetics.add(String(r.cosmetic_id));
       if (isAdminUser) for (const a of AVATARS) userOwnedCosmetics.add(a.id);
+      AvatarManager.setOwned(userOwnedCosmetics);
 
       applyCosmeticToProfileChip();
       syncIntensityLockUI();
@@ -911,6 +930,7 @@
               .eq("id", currentSupabaseUser.id);
             if (!upErr) {
               userEquippedCosmeticId = avatar.id;
+              AvatarManager.setEquippedId(avatar.id);
               await fetchUserCoinsAndShopState(sb, currentSupabaseUser);
               await primeEquippedAvatarOnly();
               applyCosmeticToProfileChip();
@@ -927,6 +947,7 @@
           return;
         }
         userEquippedCosmeticId = avatar.id;
+        AvatarManager.setEquippedId(avatar.id);
         await fetchUserCoinsAndShopState(sb, currentSupabaseUser);
         await primeEquippedAvatarOnly();
         applyCosmeticToProfileChip();
@@ -1049,6 +1070,7 @@
     }
     await Promise.all(AVATARS.map((avatar) => primeAvatarImageForShop(avatar)));
     avatarShopAssetsPrimed = true;
+    AvatarManager.markShopPrimed();
     renderAvatarShop();
     syncCustomizerPreview();
   }
@@ -1804,9 +1826,11 @@
   let mpIsSaboteur = false;
   let mpSabotageCooldownUntil = 0;
   let mpLastEmitMs = 0;
+  let mpOutSeq = 0;
+  let mpLastAckedSeq = -1;
   /** @type {number|null} */
   let mpPendingForcedSeed = null;
-  /** @type {Map<string, { x: number, y: number, vx: number, name: string, avatarId: string | null, seenMs: number }>} */
+  /** @type {Map<string, { x: number, y: number, vx: number, vy: number, name: string, avatarId: string | null, seenMs: number, recvMs: number, lerpX: number, lerpY: number, lastSeq: number }>} */
   let mpRemotePeers = new Map();
   let localMpEnabled = false;
   let localMpPlayers = ["Player A", "Player B"];
@@ -2600,6 +2624,9 @@
     elToast.classList.add("show");
     toastTimer = performance.now() + ms;
   }
+  // Expose for features running outside IIFE scope
+  window.__ssb_showToast = showToast;
+
 
   function maybeNotifyTutorialAvailable() {
     try {
@@ -3089,6 +3116,11 @@
   // ---------- Build Grid ----------
   /** @type {TileType[][]} */
   const grid = makeGrid(COLS, ROWS, Tile.empty);
+  // Expose grid reference for Feature 8 (level sharing) which runs outside IIFE scope
+  window.__ssb_getGrid = () => grid;
+  window.__ssb_getCOLS = () => COLS;
+  window.__ssb_getROWS = () => ROWS;
+
   /** Build mode: viewport top-left in world pixels (scroll). */
   let buildCamX = 0;
   let buildCamY = 0;
@@ -7533,6 +7565,8 @@
       Object.keys(popts).length ? popts : null
     );
     if (play) {
+      window.__ssb_currentPlayState = play;
+      play._startPerf = performance.now();
       const cursed =
         play.sabotageController && typeof play.sabotageController.isCursedSeed === "function" && play.sabotageController.isCursedSeed();
       const seedText = `Seed #${play.runSeed >>> 0}`;
@@ -7589,6 +7623,7 @@
       prev ? prev.dailyChallenge : null,
       merged
     );
+    if (play) { window.__ssb_currentPlayState = play; play._startPerf = performance.now(); }
     mpPendingForcedSeed = null;
     void primeEquippedAvatarOnly();
     showToast("Restarted run.");
@@ -8218,7 +8253,8 @@
       if (now - mpLastEmitMs >= 50) {
         mpLastEmitMs = now;
         // BUG FIX 7: Broadcast runSeed so receivers can flag phase desync from shifted tiles.
-        mpSocket.emit("mp_pos", { x: play.player.x, y: play.player.y, vx: play.player.vx, seed: play.runSeed });
+        mpOutSeq = (mpOutSeq + 1) >>> 0;
+        mpSocket.emit("mp_pos", { x: play.player.x, y: play.player.y, vx: play.player.vx, vy: play.player.vy || 0, seed: play.runSeed, seq: mpOutSeq });
       }
     }
     for (const [pid, rp] of [...mpRemotePeers.entries()]) {
@@ -9340,6 +9376,32 @@
       }
     }
 
+    // --- FEATURE 2: Tile sabotage flash effects ---
+    if (mode === "play" && play && tileFlashEffects.length > 0) {
+      const nowFlash = performance.now();
+      const camOff2 = camOffset(play);
+      const tx2 = canvas.width / 2 - play.cam.followX + camOff2.x;
+      const ty2 = canvas.height / 2 - play.cam.followY + camOff2.y;
+      ctx.save();
+      for (let fi = tileFlashEffects.length - 1; fi >= 0; fi--) {
+        const fx = tileFlashEffects[fi];
+        const age = nowFlash - fx.startMs;
+        const dur = 320;
+        if (age > dur) { tileFlashEffects.splice(fi, 1); continue; }
+        const t2 = 1 - age / dur;
+        const cx2 = tx2 + fx.gx * 32 + 16;
+        const cy2 = ty2 + fx.gy * 32 + 16;
+        const grad2 = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, fx.radius || 40);
+        grad2.addColorStop(0, fx.color.replace(/[\d.]+\)$/, String(t2 * 0.9) + ")"));
+        grad2.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = t2;
+        ctx.fillStyle = grad2;
+        ctx.fillRect(cx2 - (fx.radius || 40), cy2 - (fx.radius || 40), (fx.radius || 40) * 2, (fx.radius || 40) * 2);
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
     // --- FPS Counter overlay ---
     if (_fpsShowCounter) {
       const fps = _fpsDisplay;
@@ -9775,6 +9837,63 @@
 
         const glowBoost = tile.type === Tile.goal ? 1 + 0.5 * Math.sin(t * 2.5) : 0;
         drawTile(ctx2, tile.type, x * TILE + ox, y * TILE + oy, alpha, glowBoost, now, getPlayMergeMask(state, x, y, tile.type));
+
+        const px = x * TILE + ox;
+        const py = y * TILE + oy;
+        const elapsed = state.now - state.t0;
+        if (tile.type === Tile.platform || tile.type === Tile.mud || tile.type === Tile.betrayal) {
+          const sabPlat = tile.sab.platform.type;
+          if (sabPlat === "oneStep" && tile.stepCount === 0) {
+            ctx2.save();
+            ctx2.globalAlpha = 0.32;
+            ctx2.strokeStyle = "rgba(255,120,60,0.9)";
+            ctx2.lineWidth = 1.2;
+            ctx2.beginPath();
+            ctx2.moveTo(px + 7, py + TILE * 0.38); ctx2.lineTo(px + 13, py + TILE * 0.62);
+            ctx2.moveTo(px + TILE - 9, py + TILE * 0.35); ctx2.lineTo(px + TILE - 14, py + TILE * 0.65);
+            ctx2.moveTo(px + TILE * 0.5 - 3, py + 6); ctx2.lineTo(px + TILE * 0.5 + 2, py + 14);
+            ctx2.stroke();
+            ctx2.restore();
+          } else if (sabPlat === "delayed" || sabPlat === "flickerThenBreak") {
+            const warn = tile.sab.platform.delayMs > 0 ? Math.max(0, 1 - elapsed / tile.sab.platform.delayMs) : 0;
+            if (warn < 0.6) {
+              const crackAlpha = 0.18 + (1 - warn) * 0.45;
+              ctx2.save();
+              ctx2.globalAlpha = crackAlpha;
+              ctx2.strokeStyle = "rgba(255,80,40,0.95)";
+              ctx2.lineWidth = 1.1;
+              ctx2.beginPath();
+              ctx2.moveTo(px + 5, py + 9); ctx2.lineTo(px + 12, py + TILE - 8); ctx2.lineTo(px + 18, py + TILE - 14);
+              ctx2.moveTo(px + TILE - 6, py + 7); ctx2.lineTo(px + TILE - 13, py + TILE * 0.55);
+              ctx2.stroke();
+              ctx2.fillStyle = `rgba(255,100,30,${crackAlpha * 0.12})`;
+              ctx2.fillRect(px, py, TILE, TILE);
+              ctx2.restore();
+            }
+          }
+        }
+        if (tile.type === Tile.spikes && tile.sab.spikes.type === "delayedOn" && !tile.deadly) {
+          const warn = tile.sab.spikes.delayMs > 0 ? Math.max(0, 1 - elapsed / tile.sab.spikes.delayMs) : 0;
+          const redTint = (1 - warn) * 0.35;
+          ctx2.save();
+          ctx2.globalAlpha = redTint;
+          ctx2.fillStyle = "rgba(255,30,30,0.8)";
+          ctx2.fillRect(px, py, TILE, TILE);
+          ctx2.restore();
+        }
+        if (tile.type === Tile.hex && tile.sab.hex.type === "becomeDangerous" && !tile.deadly) {
+          const activateAt = tile.sab.hex.activateAtMs || 4000;
+          const warn = Math.max(0, 1 - elapsed / activateAt);
+          if (warn < 0.55) {
+            ctx2.save();
+            ctx2.globalAlpha = (1 - warn) * 0.3;
+            ctx2.fillStyle = "rgba(255,50,50,0.7)";
+            ctx2.beginPath();
+            ctx2.arc(px + TILE / 2, py + TILE / 2, TILE * 0.38, 0, Math.PI * 2);
+            ctx2.fill();
+            ctx2.restore();
+          }
+        }
       }
     }
 
@@ -10220,9 +10339,16 @@
   }
 
   function drawRemotePlayer(ctx2, peer, _state) {
+    const now = performance.now();
+    const dt = Math.min(0.2, (now - (peer.recvMs || now)) / 1000);
+    const DR_LERP = 0.18;
+    const targetX = peer.x + peer.vx * dt * 60;
+    const targetY = peer.y + (peer.vy || 0) * dt * 60;
+    peer.lerpX = peer.lerpX == null ? peer.x : peer.lerpX + (targetX - peer.lerpX) * DR_LERP;
+    peer.lerpY = peer.lerpY == null ? peer.y : peer.lerpY + (targetY - peer.lerpY) * DR_LERP;
     const p = {
-      x: peer.x,
-      y: peer.y,
+      x: peer.lerpX,
+      y: peer.lerpY,
       vx: peer.vx,
       w: 18,
       h: 26,
@@ -11297,6 +11423,9 @@
     mpMySocketId = null;
     mpMatch = { active: false, round: 0, maxRounds: 5, scores: {} };
     mpRandomQueueing = false;
+    mpOutSeq = 0;
+    mpLastAckedSeq = -1;
+    mpLastEmitMs = 0;
     if (mpSocket) {
       mpSocket.removeAllListeners();
       mpSocket.disconnect();
@@ -11375,13 +11504,25 @@
       sock.on("mp_peer_pos", (data) => {
         if (!data || data.id === mpMySocketId) return;
         const prev = mpRemotePeers.get(data.id);
+        const recvNow = performance.now();
+        const incomingSeq = (data.seq >>> 0) || 0;
+        if (prev && incomingSeq > 0 && incomingSeq <= (prev.lastSeq || 0)) return;
+        const nx = Number(data.x) || 0;
+        const ny = Number(data.y) || 0;
+        const lerpX = prev ? prev.lerpX ?? prev.x : nx;
+        const lerpY = prev ? prev.lerpY ?? prev.y : ny;
         mpRemotePeers.set(data.id, {
-          x: Number(data.x) || 0,
-          y: Number(data.y) || 0,
+          x: nx,
+          y: ny,
           vx: Number(data.vx) || 0,
+          vy: Number(data.vy) || 0,
+          lerpX,
+          lerpY,
           name: prev && prev.name ? prev.name : "Player",
           avatarId: prev && prev.avatarId != null ? prev.avatarId : null,
-          seenMs: performance.now(),
+          seenMs: recvNow,
+          recvMs: recvNow,
+          lastSeq: incomingSeq,
         });
       });
       sock.on("mp_peer_join", (data) => {
@@ -11390,9 +11531,14 @@
           x: 0,
           y: 0,
           vx: 0,
+          vy: 0,
+          lerpX: 0,
+          lerpY: 0,
           name: String(data.name || "Player").slice(0, 18),
           avatarId: data.avatarId || null,
           seenMs: performance.now(),
+          recvMs: performance.now(),
+          lastSeq: 0,
         });
         {
           const av = avatarById(String(data.avatarId));
@@ -11730,6 +11876,20 @@
   }
 
   initMultiplayer();
+
+  // Feature 8: Level hash import listener (inside IIFE so importGridFromJsonText is in scope)
+  window.addEventListener("ssb_import_level_json", (e) => {
+    if (e.detail && e.detail.json) {
+      try { importGridFromJsonText(e.detail.json); } catch {}
+    }
+  });
+
+  // Feature 6: Saboteur action listener (inside IIFE so emitSaboteurAction is in scope)
+  window.addEventListener("ssb_saboteur_do_action", (e) => {
+    if (e.detail && e.detail.kind) {
+      try { emitSaboteurAction(e.detail.kind); } catch {}
+    }
+  });
 
   if (typeof window !== "undefined") {
     window.addEventListener("error", (ev) => {
@@ -12075,5 +12235,728 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-})();
 
+  // ============================================================
+  // FEATURE 1: PRE-PLAY SABOTAGE HINTS ("Uh Oh" moment)
+  // ============================================================
+  const SABOTAGE_WARNINGS = [
+    ["Your platforms are feeling unstable today…", "The spikes remember where you placed them.", "Something in the grid is hungry."],
+    ["The tiles have been whispering all night…", "Your jump pads are holding grudges.", "Gravity feels different here. Wrong."],
+    ["Your controls may not be yours.", "The betrayal tiles can't wait.", "This seed is watching you."],
+    ["Trust no tile. Not even Start.", "The lava learned your patterns.", "One tile will flip. You won't know which."],
+    ["The hex is already active. You just can't see it.", "Your platforms voted against you.", "Run fast. They get smarter."],
+    ["The grid remembers your last death.", "Something is reversed. You'll feel it.", "The spikes are early this run."],
+  ];
+
+  function showSabotageWarning(onReady) {
+    // Don't spam for every run — only show once per 'Play' button click
+    const warningSet = SABOTAGE_WARNINGS[Math.floor(Math.random() * SABOTAGE_WARNINGS.length)];
+    const overlay = document.createElement("div");
+    overlay.className = "sabotageWarningOverlay";
+    overlay.innerHTML = `
+      <div class="sabotageWarningBox">
+        <div class="sabotageWarningIcon">⚠️</div>
+        <div class="sabotageWarningTitle">Uh Oh.</div>
+        <div class="sabotageWarningHints">
+          ${warningSet.map(w => `<div class="sabotageWarningHint">「${w}」</div>`).join("")}
+        </div>
+        <button class="sabotageWarningBtn" id="sabotageWarningContinueBtn">Enter the Run →</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const btn = overlay.querySelector("#sabotageWarningContinueBtn");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        overlay.classList.add("hiding");
+        setTimeout(() => {
+          overlay.remove();
+          onReady();
+        }, 400);
+      });
+    }
+    // Auto-dismiss after 6s
+    setTimeout(() => {
+      if (overlay.parentNode) {
+        overlay.classList.add("hiding");
+        setTimeout(() => { overlay.remove(); onReady(); }, 400);
+      }
+    }, 6000);
+  }
+
+  // Note: The sabotage warning is triggered by the mode transition observer in Feature 9.
+  // showSabotageWarning() is called automatically when Build → Play happens.
+
+  // ============================================================
+  // FEATURE 2: TILE FLASH/GLOW ON SABOTAGE ACTIVATION
+  // ============================================================
+  const tileFlashEffects = []; // {gx, gy, startMs, color}
+
+  window.addEventListener("sabotageTriggered", (e) => {
+    if (!e.detail) return;
+    // Try to get current player tile position for the flash
+    if (window.__ssb_currentPlayState) {
+      const ps = window.__ssb_currentPlayState;
+      const p = ps.player;
+      if (p && typeof p.x === "number") {
+        const TILE_SIZE = 32;
+        const gx = Math.floor((p.x + (p.w || 20) / 2) / TILE_SIZE);
+        const gy = Math.floor((p.y + (p.h || 24)) / TILE_SIZE);
+        const cat = e.detail.category || "";
+        const color = cat === "input" ? "rgba(255,180,0,0.7)" : "rgba(255,60,60,0.75)";
+        tileFlashEffects.push({ gx, gy, startMs: performance.now(), color, radius: TILE_SIZE * 1.2 });
+        if (tileFlashEffects.length > 8) tileFlashEffects.shift();
+      }
+    }
+  });
+
+  // Expose play state for flash system
+  const _origCreatePlayState = window.__ssb_createPlayState;
+
+  // ============================================================
+  // FEATURE 3: RUN DEBRIEF SCREEN
+  // ============================================================
+  const runSabotageLog = []; // events this run: {label, color, time}
+
+  window.addEventListener("sabotageTriggered", (e) => {
+    if (!e.detail) return;
+    const id = String(e.detail.id || "sabotage").replace(/_/g, " ");
+    const cat = String(e.detail.category || "");
+    let color = "#ff6060";
+    let label = id;
+    if (cat === "input") { color = "#ffaa00"; label = "Controls: " + id; }
+    else if (id.includes("spike")) { color = "#ff4444"; label = "⚡ Spikes activated"; }
+    else if (id.includes("platform") || id.includes("crumble")) { color = "#ff9900"; label = "💀 Platform crumbled"; }
+    else if (id.includes("jumppad") || id.includes("jump")) { color = "#00d4ff"; label = "🚀 Jump pad misfired"; }
+    else if (id.includes("lava")) { color = "#ff4400"; label = "🔥 Lava surge"; }
+    else if (id.includes("hex")) { color = "#cc44ff"; label = "✦ Hex activated"; }
+    else if (id.includes("betrayal")) { color = "#ffaa44"; label = "☍ Betrayal triggered"; }
+    else if (id.includes("invert")) { color = "#ffcc00"; label = "🔄 Controls inverted"; }
+    else if (id.includes("delay")) { color = "#ffcc00"; label = "⏱ Input delayed"; }
+    const timeS = window.__ssb_currentPlayState
+      ? ((performance.now() - (window.__ssb_currentPlayState._startPerf || performance.now())) / 1000).toFixed(1)
+      : "?";
+    runSabotageLog.push({ label, color, time: timeS + "s" });
+    if (runSabotageLog.length > 12) runSabotageLog.shift();
+  });
+
+  function buildDebriefHTML() {
+    if (runSabotageLog.length === 0) {
+      return `<div class="runDebriefPanel"><div class="runDebriefTitle">📋 What Betrayed You</div><div class="runDebriefItem" style="color:rgba(180,220,180,0.8)">✅ No sabotage triggered this run — clean!</div></div>`;
+    }
+    const items = runSabotageLog.map(ev =>
+      `<div class="runDebriefItem">
+        <div class="runDebriefDot" style="background:${ev.color}"></div>
+        <span style="flex:1">${ev.label}</span>
+        <span style="color:rgba(180,180,200,0.5);font-size:11px">${ev.time}</span>
+       </div>`
+    ).join("");
+    return `<div class="runDebriefPanel"><div class="runDebriefTitle">💀 What Betrayed You This Run</div>${items}</div>`;
+  }
+
+  function injectDebriefIntoEndOverlay() {
+    const endOverlay = document.getElementById("endOverlay");
+    if (!endOverlay) return;
+    let debriefEl = endOverlay.querySelector(".runDebriefSection");
+    if (!debriefEl) {
+      debriefEl = document.createElement("div");
+      debriefEl.className = "runDebriefSection";
+      const content = endOverlay.querySelector(".endOverlayContent");
+      if (content) content.appendChild(debriefEl);
+      else endOverlay.appendChild(debriefEl);
+    }
+    debriefEl.innerHTML = buildDebriefHTML();
+  }
+
+  // Hook into endOverlay visibility changes
+  const endOverlayEl = document.getElementById("endOverlay");
+  if (endOverlayEl) {
+    const debriefObs = new MutationObserver(() => {
+      if (!endOverlayEl.classList.contains("hidden")) {
+        setTimeout(injectDebriefIntoEndOverlay, 80);
+      }
+    });
+    debriefObs.observe(endOverlayEl, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  // Clear log on retry
+  const retryBtn = document.getElementById("endRetryBtn");
+  if (retryBtn) retryBtn.addEventListener("click", () => { runSabotageLog.length = 0; });
+  const buildBtn2 = document.getElementById("endBuildBtn");
+  if (buildBtn2) buildBtn2.addEventListener("click", () => { runSabotageLog.length = 0; });
+
+  // ============================================================
+  // FEATURE 4: TILE RARITY/DANGER BADGES IN PALETTE
+  // ============================================================
+  const TILE_RARITY = {
+    empty: null,
+    start: { label: "Required", cls: "safe" },
+    goal: { label: "Required", cls: "safe" },
+    checkpoint: { label: "Required", cls: "safe" },
+    platform: { label: "Common", cls: "common" },
+    spikes: { label: "Deadly", cls: "deadly" },
+    jumppad: { label: "Risky", cls: "risky" },
+    hex: { label: "Deadly", cls: "deadly" },
+    lava: { label: "Deadly", cls: "deadly" },
+    mud: { label: "Risky", cls: "risky" },
+    betrayal: { label: "💀 Traitor", cls: "deadly" },
+    pressureSwitch: { label: "Risky", cls: "risky" },
+    timedDoor: { label: "Risky", cls: "risky" },
+    speedBoost: { label: "Safe", cls: "safe" },
+    food: { label: "Safe", cls: "safe" },
+    pathBlock: null,
+  };
+
+  function injectRarityBadges() {
+    const palette = document.getElementById("palette");
+    if (!palette) return;
+    for (const btn of palette.querySelectorAll(".tileBtn")) {
+      const tileType = btn.dataset.tile;
+      if (!tileType) continue;
+      const rarity = TILE_RARITY[tileType];
+      if (!rarity) continue;
+      if (btn.querySelector(".tileRarityBadge")) continue;
+      const badge = document.createElement("span");
+      badge.className = `tileRarityBadge tileRarity-${rarity.cls}`;
+      badge.textContent = rarity.label;
+      const labelEl = btn.querySelector(".label");
+      if (labelEl) labelEl.appendChild(badge);
+    }
+  }
+  // Run after palette is built
+  setTimeout(injectRarityBadges, 400);
+
+  // ============================================================
+  // FEATURE 5: STREAK SYSTEM WITH VISUAL COMBO COUNTER
+  // ============================================================
+  (function initStreakHUD() {
+    const hud = document.querySelector(".hud");
+    if (!hud) return;
+    const streakEl = document.createElement("div");
+    streakEl.id = "streakCounter";
+    streakEl.className = "streakCounter hidden";
+    streakEl.innerHTML = `<span class="streakFire">🔥</span><span class="streakLabel">Streak</span><span class="streakNumber" id="streakNumber">1</span>`;
+    hud.appendChild(streakEl);
+
+    function updateStreakHUD() {
+      const el = document.getElementById("streakCounter");
+      const numEl = document.getElementById("streakNumber");
+      if (!el || !numEl) return;
+      // Read streak from localStorage player data
+      try {
+        const key = "ssb_players_v3";
+        const raw = localStorage.getItem(key);
+        if (!raw) { el.classList.add("hidden"); return; }
+        const data = JSON.parse(raw);
+        const activeKey = localStorage.getItem("ssb_active_player_v1");
+        if (!activeKey) { el.classList.add("hidden"); return; }
+        const activeData = JSON.parse(activeKey);
+        const pId = activeData && activeData.id;
+        if (!pId) { el.classList.add("hidden"); return; }
+        const players = Array.isArray(data) ? data : Object.values(data);
+        const player = players.find(p => p && p.id === pId);
+        const streak = player && player.stats && typeof player.stats.winStreak === "number" ? player.stats.winStreak : 0;
+        if (streak <= 0) {
+          el.classList.add("hidden");
+        } else {
+          el.classList.remove("hidden");
+          numEl.textContent = String(streak) + "x";
+          el.classList.toggle("streakBurning", streak >= 3);
+          el.title = streak >= 3
+            ? `🔥 ${streak}-run streak! Coins ×${(1 + Math.min(streak, 10) * 0.03).toFixed(2)}`
+            : `${streak}-win streak`;
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Update every 2s and on storage changes
+    setInterval(updateStreakHUD, 2000);
+    updateStreakHUD();
+    window.addEventListener("storage", updateStreakHUD);
+
+    // Streak break flash: detect when streak drops to 0
+    let _prevStreakHUD = 0;
+    setInterval(() => {
+      try {
+        const key = "ssb_active_player_v1";
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        const activeData = JSON.parse(raw);
+        const pId = activeData && activeData.id;
+        if (!pId) return;
+        const pKey = "ssb_players_v3";
+        const pRaw = localStorage.getItem(pKey);
+        if (!pRaw) return;
+        const data = JSON.parse(pRaw);
+        const players = Array.isArray(data) ? data : Object.values(data);
+        const player = players.find(p => p && p.id === pId);
+        const streak = player && player.stats && typeof player.stats.winStreak === "number" ? player.stats.winStreak : 0;
+        if (_prevStreakHUD >= 3 && streak === 0) {
+          const flash = document.createElement("div");
+          flash.className = "streakBreakFlash";
+          document.body.appendChild(flash);
+          setTimeout(() => flash.remove(), 600);
+          // Show "streak broken" toast
+          const toastEl = document.getElementById("toast");
+          if (toastEl) {
+            toastEl.textContent = `💔 ${_prevStreakHUD}-run streak broken!`;
+            toastEl.classList.add("visible");
+            setTimeout(() => toastEl.classList.remove("visible"), 2200);
+          }
+        }
+        _prevStreakHUD = streak;
+      } catch { /* ignore */ }
+    }, 1500);
+  })();
+
+  // ============================================================
+  // FEATURE 6: SABOTEUR'S CHOICE UI (MULTIPLAYER)
+  // ============================================================
+  (function initSaboteurChoiceUI() {
+    const mpModal = document.getElementById("multiplayerModal");
+    if (!mpModal) return;
+    const panel = document.createElement("div");
+    panel.id = "saboteurChoicePanel";
+    panel.className = "saboteurChoicePanel card hidden";
+    panel.innerHTML = `
+      <div class="saboteurChoiceTitle">😈 Saboteur's Arsenal — Your Turn to Betray</div>
+      <p style="font-size:12px;color:rgba(220,180,255,0.7);margin-bottom:10px;">You are the Saboteur. Pick one guaranteed betrayal to unleash this round.</p>
+      <div class="saboteurChoiceGrid">
+        <button class="saboteurChoiceBtn" data-saboteur-action="invert">🔄 Invert Controls<br><small>2.5s flip</small></button>
+        <button class="saboteurChoiceBtn" data-saboteur-action="quake">💥 Quake<br><small>screen shake + knockback</small></button>
+        <button class="saboteurChoiceBtn" data-saboteur-action="spikeBurst">⚡ Spike Surge<br><small>nearby tiles become deadly</small></button>
+        <button class="saboteurChoiceBtn" data-saboteur-action="fog">🌫 Fog<br><small>visibility blocked</small></button>
+      </div>
+      <div class="saboteurCooldownBar"><div class="saboteurCooldownFill" id="saboteurCooldownFill" style="width:100%"></div></div>
+      <p style="font-size:11px;color:rgba(220,180,255,0.5);margin-top:8px;">Cooldown between actions: 1.8s</p>
+    `;
+    const modalBody = mpModal.querySelector(".modalBody");
+    if (modalBody) modalBody.appendChild(panel);
+
+    // Wire buttons to emitSaboteurAction
+    panel.querySelectorAll(".saboteurChoiceBtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.saboteurAction;
+        if (!action) return;
+        // Try to call the existing emitSaboteurAction function via the global scope trick
+        // We dispatch a custom event that the game loop can pick up
+        window.dispatchEvent(new CustomEvent("ssb_saboteur_action_requested", { detail: { kind: action } }));
+        // Visual cooldown bar
+        const fill = document.getElementById("saboteurCooldownFill");
+        if (fill) {
+          fill.style.transition = "none";
+          fill.style.width = "0%";
+          setTimeout(() => {
+            fill.style.transition = "width 1.8s linear";
+            fill.style.width = "100%";
+          }, 50);
+        }
+        panel.querySelectorAll(".saboteurChoiceBtn").forEach(b => { b.disabled = true; });
+        setTimeout(() => {
+          panel.querySelectorAll(".saboteurChoiceBtn").forEach(b => { b.disabled = false; });
+        }, 1900);
+      });
+    });
+
+    // Show/hide panel based on saboteur role
+    // Poll the HUD role text
+    setInterval(() => {
+      const roleEl = document.getElementById("mpHudRole");
+      const isSaboteur = roleEl && roleEl.textContent === "Saboteur";
+      panel.classList.toggle("hidden", !isSaboteur);
+    }, 1000);
+  })();
+
+  // Listen for saboteur action request and route to the game
+  window.addEventListener("ssb_saboteur_action_requested", (e) => {
+    if (e.detail && e.detail.kind) {
+      // Trigger the existing emitSaboteurAction by dispatching keyboard shortcut or via the play state
+      window.dispatchEvent(new CustomEvent("ssb_saboteur_do_action", { detail: e.detail }));
+    }
+  });
+
+  // ============================================================
+  // FEATURE 7: CONTEXTUAL TOOLTIP SYSTEM + SIDEBAR TIPS COLLAPSE
+  // ============================================================
+  (function initTooltipSystem() {
+    const tooltip = document.createElement("div");
+    tooltip.className = "tileTooltip";
+    tooltip.id = "tileTooltip";
+    document.body.appendChild(tooltip);
+
+    const TILE_RARITY_DESC = {
+      platform: { rarity: "Common", desc: "May crumble or shift. Bread and butter — but don't trust it.", cls: "common" },
+      spikes: { rarity: "Deadly ☠️", desc: "Kills on contact. May activate early or late — unpredictable.", cls: "deadly" },
+      jumppad: { rarity: "Risky", desc: "Launches you upward. May misfire or reverse direction.", cls: "risky" },
+      hex: { rarity: "Deadly ☠️", desc: "Curses your run. Becomes deadly after a delay.", cls: "deadly" },
+      lava: { rarity: "Deadly ☠️", desc: "Instant death. No exceptions.", cls: "deadly" },
+      mud: { rarity: "Risky", desc: "5× slower movement. May shift like platforms.", cls: "risky" },
+      betrayal: { rarity: "💀 Traitor", desc: "Looks innocent. Will mutate into a hazard mid-run.", cls: "deadly" },
+      pressureSwitch: { rarity: "Risky", desc: "Teleports you to a linked destination on contact.", cls: "risky" },
+      timedDoor: { rarity: "Risky", desc: "Teleport door with cooldown. Set destination after placing.", cls: "risky" },
+      speedBoost: { rarity: "Safe", desc: "Temporary speed buff. Reliable — but speed can betray you.", cls: "safe" },
+      food: { rarity: "Safe", desc: "Restores stability and reduces sabotage effects.", cls: "safe" },
+      start: { rarity: "Required", desc: "Player spawn point. One per level required.", cls: "safe" },
+      goal: { rarity: "Required", desc: "Touch to win the level.", cls: "safe" },
+      checkpoint: { rarity: "Required", desc: "One per level. Gives you a revive on your first death.", cls: "safe" },
+    };
+
+    function showTooltip(tileType, btn) {
+      const info = TILE_RARITY_DESC[tileType];
+      if (!info) { tooltip.classList.remove("visible"); return; }
+      const r = TILE_RARITY[tileType];
+      tooltip.innerHTML = `
+        <div class="tileTooltipName">${tileType.charAt(0).toUpperCase() + tileType.slice(1)}</div>
+        <div class="tileTooltipHint">${info.desc}</div>
+        <div class="tileTooltipRarity tileRarity-${info.cls}">${info.rarity}</div>
+      `;
+      const rect = btn.getBoundingClientRect();
+      const ttW = 220;
+      let left = rect.right + 8;
+      if (left + ttW > window.innerWidth - 10) left = rect.left - ttW - 8;
+      tooltip.style.left = Math.max(4, left) + "px";
+      tooltip.style.top = (rect.top + rect.height / 2 - 60) + "px";
+      tooltip.classList.add("visible");
+    }
+
+    function hideTooltip() {
+      tooltip.classList.remove("visible");
+    }
+
+    // Attach to palette buttons
+    function attachTooltips() {
+      const palette = document.getElementById("palette");
+      if (!palette) return;
+      palette.querySelectorAll(".tileBtn").forEach(btn => {
+        if (btn.dataset.tooltipAttached) return;
+        btn.dataset.tooltipAttached = "1";
+        btn.addEventListener("mouseenter", () => showTooltip(btn.dataset.tile, btn));
+        btn.addEventListener("mouseleave", hideTooltip);
+      });
+    }
+    setTimeout(attachTooltips, 500);
+    setInterval(attachTooltips, 3000);
+
+    // Collapsible sidebar help
+    const helpSection = document.querySelector(".help");
+    if (helpSection) {
+      const helpTitle = helpSection.querySelector(".helpTitle");
+      if (helpTitle) {
+        const toggle = document.createElement("span");
+        toggle.style.cssText = "float:right;cursor:pointer;font-size:12px;opacity:0.6;user-select:none;";
+        toggle.textContent = "▼ hide";
+        let collapsed = false;
+        helpTitle.appendChild(toggle);
+        const helpBody = helpSection.querySelectorAll("ul, .helpText, .helpTitle:not(:first-child)");
+        toggle.addEventListener("click", () => {
+          collapsed = !collapsed;
+          helpBody.forEach(el => { el.style.display = collapsed ? "none" : ""; });
+          toggle.textContent = collapsed ? "▶ show" : "▼ hide";
+        });
+      }
+    }
+  })();
+
+  // ============================================================
+  // FEATURE 8: LEVEL SHARING WITH URL HASH + QR CODE
+  // ============================================================
+  (function initLevelSharing() {
+    const levelsModal = document.getElementById("levelsModal");
+    if (!levelsModal) return;
+
+    // Add share panel after export/import buttons
+    const exportBtn = document.getElementById("exportLevelBtn");
+    if (!exportBtn) return;
+    const exportRow = exportBtn.parentElement;
+    if (!exportRow) return;
+
+    const sharePanel = document.createElement("div");
+    sharePanel.className = "shareLevelPanel";
+    sharePanel.innerHTML = `
+      <button id="shareLevelHashBtn" class="btn primary" type="button">🔗 Share Level</button>
+      <input id="shareUrlDisplay" class="shareUrlInput" readonly placeholder="Click Share Level to generate URL…" />
+      <button id="copyShareUrlBtn" class="btn subtle" type="button">Copy</button>
+      <canvas id="qrCodeCanvas" width="80" height="80" style="display:none" title="QR Code for this level"></canvas>
+    `;
+    exportRow.parentNode.insertBefore(sharePanel, exportRow.nextSibling);
+
+    // Simple QR code generator (URL-based via API)
+    function generateQR(url) {
+      const canvas = document.getElementById("qrCodeCanvas");
+      if (!canvas) return;
+      // Use a simple online QR service via image (no external JS needed)
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      const encoded = encodeURIComponent(url);
+      img.src = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encoded}`;
+      img.onload = () => {
+        const ctx2 = canvas.getContext("2d");
+        if (ctx2) {
+          ctx2.clearRect(0, 0, 80, 80);
+          ctx2.drawImage(img, 0, 0, 80, 80);
+          canvas.style.display = "block";
+        }
+      };
+      img.onerror = () => { canvas.style.display = "none"; };
+    }
+
+    function getCurrentLevelData() {
+      try {
+        const g = window.__ssb_getGrid ? window.__ssb_getGrid() : null;
+        const COLS_SHARE = window.__ssb_getCOLS ? window.__ssb_getCOLS() : 64;
+        const ROWS_SHARE = window.__ssb_getROWS ? window.__ssb_getROWS() : 36;
+        if (!g) return null;
+        const flat = [];
+        for (let y = 0; y < ROWS_SHARE; y++) {
+          for (let x = 0; x < COLS_SHARE; x++) {
+            flat.push((g[y] && g[y][x]) || "empty");
+          }
+        }
+        // Only share if there's something placed
+        const hasContent = flat.some(t => t !== "empty");
+        if (!hasContent) return null;
+        return { v: 2, cols: COLS_SHARE, rows: ROWS_SHARE, tilesFlat: flat, texts: {} };
+      } catch { return null; }
+    }
+
+    document.getElementById("shareLevelHashBtn").addEventListener("click", () => {
+      const data = getCurrentLevelData();
+      if (!data) {
+        const urlInput = document.getElementById("shareUrlDisplay");
+        if (urlInput) urlInput.placeholder = "Build a level first!";
+        return;
+      }
+      try {
+        const json = JSON.stringify(data);
+        const compressed = btoa(encodeURIComponent(json)).replace(/=/g, "").slice(0, 2000);
+        const url = `${location.origin}${location.pathname}#level=${compressed}`;
+        const urlInput = document.getElementById("shareUrlDisplay");
+        if (urlInput) urlInput.value = url;
+        generateQR(url);
+        // Also auto-copy
+        navigator.clipboard.writeText(url).then(() => {
+          if (window.__ssb_showToast) window.__ssb_showToast("Level URL copied to clipboard!", 2200);
+        }).catch(() => {});
+      } catch (e) {
+        if (window.__ssb_showToast) window.__ssb_showToast("Could not encode level.", 1800);
+      }
+    });
+
+    document.getElementById("copyShareUrlBtn").addEventListener("click", () => {
+      const urlInput = document.getElementById("shareUrlDisplay");
+      if (!urlInput || !urlInput.value) return;
+      navigator.clipboard.writeText(urlInput.value).then(() => {
+        if (window.__ssb_showToast) window.__ssb_showToast("URL copied!", 1500);
+      });
+    });
+
+    // On page load, check for #level= hash and auto-import
+    (function checkLevelHash() {
+      const hash = location.hash;
+      if (!hash.startsWith("#level=")) return;
+      const encoded = hash.slice(7);
+      try {
+        const json = decodeURIComponent(atob(encoded + "==".slice(0, (4 - encoded.length % 4) % 4)));
+        const data = JSON.parse(json);
+        if (data && data.tilesFlat) {
+          // Delay to let the app init
+          setTimeout(() => {
+            try {
+              window.dispatchEvent(new CustomEvent("ssb_import_level_json", { detail: { json: JSON.stringify(data) } }));
+              if (window.__ssb_showToast) window.__ssb_showToast("Level loaded from shared URL! 🎉", 2500);
+            } catch {}
+          }, 1200);
+        }
+      } catch {}
+    })();
+  })();
+
+  // ============================================================
+  // FEATURE 9: ANIMATED SABOTAGE REVEAL TRANSITION (Build → Play)
+  // ============================================================
+  (function initSabotageRevealTransition() {
+    const playBtn = document.getElementById("playModeBtn");
+    if (!playBtn) return;
+
+    // We observe when play mode actually activates (buildBtn loses primary class)
+    // and then trigger the transition + warning overlay
+    let _wasInBuild = true;
+    const modeObs = new MutationObserver(() => {
+      const buildBtn3 = document.getElementById("buildModeBtn");
+      const nowInBuild = buildBtn3 ? buildBtn3.classList.contains("primary") : true;
+      if (_wasInBuild && !nowInBuild) {
+        // Just switched from build → play
+        runSabotageLog.length = 0; // clear debrief for new run
+
+        // 1. Show the red flash overlay immediately
+        const overlay = document.createElement("div");
+        overlay.className = "sabotageRevealOverlay";
+        document.body.appendChild(overlay);
+
+        // 2. Shake the canvas briefly
+        const gameCanvas = document.getElementById("game");
+        if (gameCanvas) {
+          let shakes = 0;
+          const shakeInterval = setInterval(() => {
+            const dx = (Math.random() - 0.5) * 9;
+            const dy = (Math.random() - 0.5) * 7;
+            gameCanvas.style.transform = `translate(${dx}px,${dy}px)`;
+            shakes++;
+            if (shakes >= 6) {
+              clearInterval(shakeInterval);
+              gameCanvas.style.transform = "";
+            }
+          }, 75);
+        }
+
+        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 750);
+
+        // 3. Then show cryptic hints (non-blocking, just atmosphere)
+        setTimeout(() => showSabotageWarning(() => {}), 200);
+      }
+      _wasInBuild = nowInBuild;
+    });
+
+    const buildBtn4 = document.getElementById("buildModeBtn");
+    if (buildBtn4) modeObs.observe(buildBtn4, { attributes: true, attributeFilter: ["class"] });
+  })();
+
+  // ============================================================
+  // FEATURE 10: COMMUNITY LEVEL STAR RATING
+  // ============================================================
+  (function initStarRating() {
+    // Patch refreshGlobalLevelsList to add star ratings
+    // We use a MutationObserver on the global levels list to inject stars
+    const globalList = document.getElementById("globalLevelsList");
+    if (!globalList) return;
+
+    const STAR_KEY_PREFIX = "ssb_star_";
+
+    function injectStarsIntoLevelList() {
+      const items = globalList.querySelectorAll(".listItem");
+      items.forEach((item, idx) => {
+        if (item.querySelector(".starRatingRow")) return; // already injected
+        // Get level name to use as key
+        const nameEl = item.querySelector(".name");
+        const levelKey = nameEl ? STAR_KEY_PREFIX + nameEl.textContent.slice(0, 60).replace(/\s+/g, "_") : null;
+        if (!levelKey) return;
+
+        const savedRating = (() => { try { return parseInt(localStorage.getItem(levelKey) || "0"); } catch { return 0; } })();
+        const countKey = levelKey + "_count";
+        const totalKey = levelKey + "_total";
+        const count = (() => { try { return parseInt(localStorage.getItem(countKey) || "0"); } catch { return 0; } })();
+        const total = (() => { try { return parseInt(localStorage.getItem(totalKey) || "0"); } catch { return 0; } })();
+        const avgRating = count > 0 ? (total / count).toFixed(1) : null;
+
+        const starRow = document.createElement("div");
+        starRow.className = "starRatingRow";
+
+        const stars = [1,2,3,4,5].map(n => {
+          const btn = document.createElement("button");
+          btn.className = "starBtn" + (n <= savedRating ? " active" : "");
+          btn.textContent = n <= savedRating ? "★" : "☆";
+          btn.dataset.star = String(n);
+          btn.title = `Rate ${n} star${n !== 1 ? "s" : ""}`;
+          btn.addEventListener("click", () => {
+            try {
+              const prev = parseInt(localStorage.getItem(levelKey) || "0");
+              localStorage.setItem(levelKey, String(n));
+              const c = parseInt(localStorage.getItem(countKey) || "0");
+              const t = parseInt(localStorage.getItem(totalKey) || "0");
+              if (prev === 0) {
+                localStorage.setItem(countKey, String(c + 1));
+                localStorage.setItem(totalKey, String(t + n));
+              } else {
+                localStorage.setItem(totalKey, String(t - prev + n));
+              }
+            } catch {}
+            // Update UI
+            starRow.querySelectorAll(".starBtn").forEach((sb, i) => {
+              sb.classList.toggle("active", i < n);
+              sb.textContent = i < n ? "★" : "☆";
+            });
+            const newCount = (() => { try { return parseInt(localStorage.getItem(countKey) || "0"); } catch { return 0; } })();
+            const newTotal = (() => { try { return parseInt(localStorage.getItem(totalKey) || "0"); } catch { return 0; } })();
+            const countSpan = starRow.querySelector(".starRatingCount");
+            if (countSpan) {
+              countSpan.textContent = newCount > 0 ? `${(newTotal / newCount).toFixed(1)} (${newCount})` : "";
+            }
+            if (window.__ssb_showToast) window.__ssb_showToast(`Rated ${n} ★ — thanks!`, 1400);
+          });
+          return btn;
+        });
+
+        stars.forEach(s => starRow.appendChild(s));
+
+        const countSpan = document.createElement("span");
+        countSpan.className = "starRatingCount";
+        countSpan.textContent = avgRating ? `${avgRating} (${count})` : "";
+        starRow.appendChild(countSpan);
+
+        const metaEl = item.querySelector(".meta");
+        if (metaEl) metaEl.appendChild(starRow);
+      });
+    }
+
+    const starObs = new MutationObserver(() => {
+      setTimeout(injectStarsIntoLevelList, 100);
+    });
+    starObs.observe(globalList, { childList: true });
+  })();
+
+  // ============================================================
+  // EXPOSE PLAY STATE TO FLASH SYSTEM
+  // ============================================================
+  // Monitor for play state changes via existing toast events
+  const _origShowToast = window.__ssb_showToast;
+  setInterval(() => {
+    // Try to access play state via canvas metadata (set by game loop)
+    if (window.__ssb_ps) {
+      window.__ssb_currentPlayState = window.__ssb_ps;
+    }
+  }, 16);
+
+  // ============================================================
+  // UI/UX FIXES: Sidebar live tile count + misc
+  // ============================================================
+  (function initLiveTileCount() {
+    const helpSection = document.querySelector(".help");
+    if (!helpSection) return;
+    // Add live tile breakdown stats card before the help section
+    const panel = document.querySelector(".panel");
+    if (!panel) return;
+    const statsCard = document.createElement("div");
+    statsCard.id = "liveTileCountCard";
+    statsCard.style.cssText = "background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;";
+    statsCard.innerHTML = `
+      <div style="font-weight:800;color:rgba(200,200,255,0.8);margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;">📊 Live Tile Stats</div>
+      <div id="liveTileCountBody" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;color:rgba(180,190,220,0.75);"></div>
+    `;
+    panel.insertBefore(statsCard, helpSection);
+
+    function updateLiveTileCount() {
+      const body = document.getElementById("liveTileCountBody");
+      if (!body) return;
+      try {
+        const g = window.__ssb_getGrid ? window.__ssb_getGrid() : null;
+        if (!g) return;
+        const counts = {};
+        for (let y = 0; y < g.length; y++) {
+          for (let x = 0; x < (g[y] ? g[y].length : 0); x++) {
+            const t = g[y][x];
+            if (t && t !== "empty") counts[t] = (counts[t] || 0) + 1;
+          }
+        }
+        const ICONS = { platform:"▭", spikes:"▲", jumppad:"⌃", hex:"✦", lava:"≈", mud:"≋", betrayal:"☍", start:"🏁", goal:"⭐", checkpoint:"◇", speedBoost:"⚡", food:"●" };
+        const entries = Object.entries(counts).filter(([k]) => k !== "pathBlock");
+        if (entries.length === 0) { body.textContent = "No tiles placed."; return; }
+        body.innerHTML = entries.map(([t, c]) =>
+          `<span style="display:flex;gap:4px;align-items:center;">${ICONS[t] || "·"} ${t}: <b>${c}</b></span>`
+        ).join("");
+      } catch {}
+    }
+    setInterval(updateLiveTileCount, 800);
+    updateLiveTileCount();
+  })();
+
+
+})();

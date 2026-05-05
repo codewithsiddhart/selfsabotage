@@ -326,12 +326,16 @@ function setupMultiplayer(io) {
       const x = Number(data && data.x);
       const y = Number(data && data.y);
       const vx = Number(data && data.vx);
+      const vy = Number(data && data.vy) || 0;
+      const seq = (Number(data && data.seq) >>> 0) || 0;
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(vx)) return;
       socket.to(rid).emit("mp_peer_pos", {
         id: socket.id,
         x,
         y,
         vx,
+        vy,
+        seq,
       });
     });
 
