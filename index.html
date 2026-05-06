@@ -506,6 +506,14 @@
             </select>
           </div>
           <button type="button" id="settingsSecretSparkleBtn" class="settingsSecretSparkleBtn" aria-label="A little surprise" title="Shh…">✨</button>
+          <!-- PERF OPT: Performance mode toggle -->
+          <div class="card" style="margin-top:8px;">
+            <div class="cardTitle">⚡ Performance</div>
+            <label class="toggleRow">
+              <span>Performance mode <span style="font-size:11px;opacity:0.6;">(disables glow/shadows, reduces particles, smoother on slow devices)</span></span>
+              <input id="perfModeToggle" type="checkbox" />
+            </label>
+          </div>
         </div>
 
         <div class="card">
@@ -887,5 +895,6 @@
     <script src="supabase-config.js"></script>
     <script src="systems/sabotage.js"></script>
     <script src="script.js"></script>
+    <script src="enhancements.js"></script>
   </body>
 </html>

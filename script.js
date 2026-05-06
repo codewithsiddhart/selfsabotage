@@ -18,8 +18,9 @@
   // - Local player profiles with levels, stats, difficulty/points, and local leaderboard.
   // - No external dependencies and no audio files: lightweight procedural audio via WebAudio.
 
-  /** Cap pooled particles so effects cannot grow without bound. */
+  /** Cap pooled particles so effects cannot grow without bound. PERF OPT: reduced to 60 in perf mode. */
   const MAX_PARTICLES = 240;
+  const MAX_PARTICLES_PERF = 60;
 
   const DRAFT_GRID_KEY = "ssb_build_draft_v1";
   const TUTORIAL_PROMPT_KEY = "ssb_tutorial_prompt_v1";
@@ -2925,6 +2926,18 @@
     persist();
   });
 
+  // PERF OPT: Performance mode toggle — wired to checkbox#perfModeToggle in settings.
+  const elPerfModeToggle = /** @type {HTMLInputElement|null} */ (document.getElementById("perfModeToggle"));
+  if (elPerfModeToggle) {
+    elPerfModeToggle.checked = !!save.settings.perfMode;
+    _perfMode = !!save.settings.perfMode;
+    elPerfModeToggle.addEventListener("change", () => {
+      _perfMode = elPerfModeToggle.checked;
+      save.settings.perfMode = _perfMode;
+      persist();
+    });
+  }
+
   elSabotageSlider.addEventListener("input", () => {
     const v = clamp(parseInt(elSabotageSlider.value || "5", 10) || 5, 1, 10);
     elSabotageSlider.value = String(v);
@@ -3316,7 +3329,13 @@
     if (play && play.adminFlyTarget) play.adminFlyTarget = null;
     if (mode === "build") elRunHint.textContent = "Pan: wheel · middle-drag · two fingers · arrows.";
   });
+  // PERF OPT: Throttle pointermove — store last event, process only in frame().
+  let _pendingPointerMove = null;
   canvas.addEventListener("pointermove", (e) => {
+    _pendingPointerMove = e;
+  });
+
+  function processPointerMove(e) {
     if (mode === "build" && buildPanPointerId === e.pointerId) {
       const sc = canvasBitmapScale();
       buildCamX -= (e.clientX - buildPanLastClient.x) / sc;
@@ -3382,7 +3401,7 @@
       if (w && (e.buttons & 1) === 1) play.adminFlyTarget = w;
       else play.adminFlyTarget = null;
     }
-  });
+  }
 
   canvas.addEventListener("pointerdown", (e) => {
     if (mode !== "build") return;
@@ -3552,6 +3571,8 @@
     commitGridMutation();
     buildEraseStrokeDirty = false;
     scheduleValidate();
+    // PERF OPT: Notify budget grid to update without polling.
+    window.dispatchEvent(new CustomEvent("ssb:tileChanged"));
   }
 
   canvas.addEventListener("pointerup", (e) => {
@@ -3727,6 +3748,8 @@
     pendingLinkSource = null;
     ensureCheckpointInWorldGrid();
     scheduleValidate();
+    // PERF OPT: Notify budget grid of full grid reload.
+    window.dispatchEvent(new CustomEvent("ssb:gridLoaded"));
     return true;
   }
 
@@ -3999,6 +4022,8 @@
     AudioSys.sfx.place();
     commitGridMutation();
     scheduleValidate();
+    // PERF OPT: Notify budget grid to update without polling.
+    window.dispatchEvent(new CustomEvent("ssb:tileChanged"));
   }
 
   function clearType(t) {
@@ -7850,7 +7875,7 @@
   }
 
   function addParticles(state, x, y, count, upward = false) {
-    const room = MAX_PARTICLES - state.particles.length;
+    const room = (_perfMode ? MAX_PARTICLES_PERF : MAX_PARTICLES) - state.particles.length;
     if (room <= 0) return;
     const n = Math.min(count, room);
     for (let i = 0; i < n; i++) {
@@ -9352,13 +9377,51 @@
     ctx2.restore();
   }
 
+  // PERF OPT: Offscreen background canvas cache — only redraws when parallax offset changes > 2px.
+  let _bgOffscreen = null;
+  let _bgOffscreenCtx = null;
+  let _bgLastSX = null;
+  let _bgLastSY = null;
+  let _bgLastW = 0;
+  let _bgLastH = 0;
+  let _bgLastTheme = "";
+
   // ---------- Rendering (layer order: background → world/play → screen fade; HTML UI is above canvas) ----------
   function render(now) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const bgSX = mode === "play" && play ? play.bgParallaxX : buildCamX + canvas.width * 0.5;
     const bgSY = mode === "play" && play ? play.bgParallaxY : buildCamY + canvas.height * 0.5;
-    drawBackground(ctx, now, bgSX, bgSY);
+
+    // Rebuild offscreen canvas if size/theme changed, or redraw if parallax moved > 2px.
+    const curTheme = save.settings.background || "scene";
+    const sizeChanged = _bgLastW !== canvas.width || _bgLastH !== canvas.height;
+    const themeChanged = _bgLastTheme !== curTheme;
+    const parallaxMoved = _bgLastSX === null ||
+      Math.abs(bgSX - _bgLastSX) > 2 || Math.abs(bgSY - _bgLastSY) > 2;
+
+    if (sizeChanged || themeChanged) {
+      _bgOffscreen = document.createElement("canvas");
+      _bgOffscreen.width = canvas.width;
+      _bgOffscreen.height = canvas.height;
+      _bgOffscreenCtx = _bgOffscreen.getContext("2d");
+      _bgLastW = canvas.width;
+      _bgLastH = canvas.height;
+      _bgLastTheme = curTheme;
+      _bgLastSX = null; // force redraw
+    }
+
+    if (_bgOffscreen && _bgOffscreenCtx && (parallaxMoved || themeChanged || sizeChanged)) {
+      drawBackground(_bgOffscreenCtx, now, bgSX, bgSY);
+      _bgLastSX = bgSX;
+      _bgLastSY = bgSY;
+    }
+
+    if (_bgOffscreen) {
+      ctx.drawImage(_bgOffscreen, 0, 0);
+    } else {
+      drawBackground(ctx, now, bgSX, bgSY);
+    }
 
     if (mode === "build") {
       ctx.save();
@@ -9455,7 +9518,8 @@
    */
   function drawBackground(ctx2, now, scrollWorldX, scrollWorldY) {
     const t = now / 1000;
-    const theme = save.settings.background || "scene";
+    // PERF OPT: Force the lightweight "grid" background in performance mode.
+    const theme = _perfMode ? "grid" : (save.settings.background || "scene");
     const px = canvas.width * 0.5 - scrollWorldX;
     const py = canvas.height * 0.5 - scrollWorldY;
     const parallaxBoost = mode === "play" && play ? 1.45 : 1;
@@ -9954,14 +10018,20 @@
 
     drawTextsInWorld(ctx2, gx0, gy0, gx1, gy1);
 
-    // Particles
-    for (const p of state.particles) {
+    // PERF OPT: Batch all particles into a single path (was: save/restore per particle).
+    if (state.particles.length > 0) {
       ctx2.save();
-      ctx2.globalAlpha = Math.max(0, p.life);
       ctx2.fillStyle = "rgba(255,255,255,0.7)";
       ctx2.beginPath();
-      ctx2.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      for (const p of state.particles) {
+        const a = Math.max(0, p.life);
+        if (a <= 0) continue;
+        ctx2.globalAlpha = a;
+        ctx2.moveTo(p.x + p.r, p.y);
+        ctx2.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      }
       ctx2.fill();
+      ctx2.globalAlpha = 1;
       ctx2.restore();
     }
 
@@ -10228,10 +10298,17 @@
       ctx2.restore();
       drawTileTexture(ctx2, "lava", x + ml, y + mu, TILE - ml - mr, TILE - mu - md, alpha * 0.9, 7, () => {});
       const waveY = y + mu + 4 + pulseSlow * 2.2;
-      const grad = ctx2.createLinearGradient(x + ml + 2, y + mu + 2, x + TILE - mr - 2, y + TILE - md - 2);
-      grad.addColorStop(0, `rgba(253,186,116,${0.75 + pulseFast * 0.2})`);
-      grad.addColorStop(0.55, "rgba(249,115,22,0.78)");
-      grad.addColorStop(1, "rgba(220,38,38,0.78)");
+      // PERF OPT: Cache lava gradient per tile position — createLinearGradient allocates a GPU object.
+      const lavaGradKey = `lava|${x}|${y}`;
+      let grad = _gradCache.get(lavaGradKey);
+      if (!grad) {
+        grad = ctx2.createLinearGradient(x + ml + 2, y + mu + 2, x + TILE - mr - 2, y + TILE - md - 2);
+        grad.addColorStop(0, "rgba(253,186,116,0.85)");
+        grad.addColorStop(0.55, "rgba(249,115,22,0.78)");
+        grad.addColorStop(1, "rgba(220,38,38,0.78)");
+        _gradCache.set(lavaGradKey, grad);
+        if (_gradCache.size > 80) _gradCache.clear();
+      }
       ctx2.fillStyle = grad;
       roundRect(ctx2, x + ml + 2, waveY, TILE - ml - mr - 4, Math.max(5, TILE - mu - md - 8), 5);
       ctx2.fill();
@@ -10271,9 +10348,16 @@
         ctx2.shadowColor = "rgba(74,222,128,0.95)";
         ctx2.shadowBlur = 11 + glowBoost * 8 + pulseFast * 6;
       }
-      const g = ctx2.createLinearGradient(x + 2, y + 4, x + TILE - 2, y + TILE - 4);
-      g.addColorStop(0, "rgba(22,163,74,0.9)");
-      g.addColorStop(1, "rgba(16,185,129,0.9)");
+      // PERF OPT: Cache speedBoost gradient per tile position.
+      const sbGradKey = `sb|${x}|${y}`;
+      let g = _gradCache.get(sbGradKey);
+      if (!g) {
+        g = ctx2.createLinearGradient(x + 2, y + 4, x + TILE - 2, y + TILE - 4);
+        g.addColorStop(0, "rgba(22,163,74,0.9)");
+        g.addColorStop(1, "rgba(16,185,129,0.9)");
+        _gradCache.set(sbGradKey, g);
+        if (_gradCache.size > 80) _gradCache.clear();
+      }
       ctx2.fillStyle = g;
       roundRect(ctx2, x + 2, y + 4, TILE - 4, TILE - 8, 7);
       ctx2.fill();
@@ -12018,13 +12102,17 @@
   let _fpsFrameCount = 0;
   let _fpsSampleStart = performance.now();
   let _fpsDisplay = 0;     // last computed FPS shown in HUD
-  let _fpsLow = false;     // true when FPS < 40 → adaptive quality kicks in
+  let _fpsLow = false;     // true when FPS < 55 → adaptive quality kicks in
   let _fpsShowCounter = true;
+  // PERF OPT: Manual performance mode flag (set by settings toggle).
+  // When true: no shadows/glow, reduced particles, forced grid background.
+  let _perfMode = false;
 
-  // --- Adaptive shadow quality: disabled when FPS drops below 40 ---
+  // --- Adaptive shadow quality: disabled when FPS drops below 55 ---
   // shadowBlur is the #1 GPU bottleneck in Canvas2D. We skip it when lagging.
+  // PERF OPT: Threshold raised from 40 → 55 so shadows are dropped before FPS collapses.
   function shouldDrawShadows() {
-    return !_fpsLow;
+    return _fpsDisplay >= 55 && !_perfMode;
   }
 
   // ================================================================
@@ -12041,7 +12129,7 @@
     if (_fpsFrameCount >= 30) {
       const elapsed = now - _fpsSampleStart;
       _fpsDisplay = Math.round((_fpsFrameCount / elapsed) * 1000);
-      _fpsLow = _fpsDisplay < 40;
+      _fpsLow = _fpsDisplay < 55; // PERF OPT: raised from 40 → 55
       _fpsFrameCount = 0;
       _fpsSampleStart = now;
     }
@@ -12057,6 +12145,11 @@
     }
 
     // --- update (single requestAnimationFrame loop; dt-clamped) ---
+    // PERF OPT: Process pending pointer move at most once per frame (throttle pointermove).
+    if (_pendingPointerMove) {
+      processPointerMove(_pendingPointerMove);
+      _pendingPointerMove = null;
+    }
     updateToast(now);
     updateLegendaryVibe(now);
     if (mode === "build") updateTimerPill(null);
