@@ -22,6 +22,11 @@
   const MAX_PARTICLES = 240;
   const MAX_PARTICLES_PERF = 60;
 
+  // PERF OPT: Hoisted to top of scope — used by scheduleValidate (called from onload at line ~1791)
+  // and by shouldDrawShadows / settings toggle (used before line 12109 where they were originally declared).
+  let validateDebounceTimer = 0;
+  let _perfMode = false;
+
   const DRAFT_GRID_KEY = "ssb_build_draft_v1";
   const TUTORIAL_PROMPT_KEY = "ssb_tutorial_prompt_v1";
   const SABOTAGE_META_KEY = "ssb_sabotage_meta_v1";
@@ -5142,7 +5147,7 @@
   // ---------- Level validation + difficulty ----------
   /** Stochastic physics validation is heavy; debounce so painting/erasing stays responsive. */
   const VALIDATE_DEBOUNCE_MS = 200;
-  let validateDebounceTimer = 0;
+  // validateDebounceTimer hoisted to top of scope to avoid TDZ error from early onload callbacks.
 
   function flushBuildValidation() {
     if (validateDebounceTimer) {
@@ -12104,9 +12109,7 @@
   let _fpsDisplay = 0;     // last computed FPS shown in HUD
   let _fpsLow = false;     // true when FPS < 55 → adaptive quality kicks in
   let _fpsShowCounter = true;
-  // PERF OPT: Manual performance mode flag (set by settings toggle).
-  // When true: no shadows/glow, reduced particles, forced grid background.
-  let _perfMode = false;
+  // _perfMode hoisted to top of scope — see declaration near MAX_PARTICLES.
 
   // --- Adaptive shadow quality: disabled when FPS drops below 55 ---
   // shadowBlur is the #1 GPU bottleneck in Canvas2D. We skip it when lagging.
