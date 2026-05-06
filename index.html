@@ -11,7 +11,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Self-Sabotage Builder | NeuroGlitch</title>
-    <link rel="stylesheet" href="style.css" />
+    <!-- PERF OPT: Preload critical assets so they're ready before canvas initializes -->
+    <link rel="preload" href="assets/world-backdrop.webp" as="image" type="image/webp" />
+    <link rel="preload" href="style.min.css" as="style" />
+    <link rel="preload" href="script.min.js" as="script" />
+    <link rel="stylesheet" href="style.min.css" />
   </head>
   <body>
     <!-- Device mode: show on first visit -->
@@ -703,7 +707,7 @@
         <div class="customizerPreviewCol">
           <div class="cardTitle">Preview</div>
           <div class="customizerPreviewWrap">
-            <img id="customizerPreviewImage" class="customizerPreviewImage" alt="Selected ghost preview" />
+            <img id="customizerPreviewImage" class="customizerPreviewImage" alt="Selected ghost preview" loading="lazy" decoding="async" />
           </div>
           <div class="smallNote">Cosmetic only. Hitbox and gameplay are unchanged.</div>
         </div>
@@ -894,7 +898,7 @@
     <script src="multiplayer-config.js"></script>
     <script src="supabase-config.js"></script>
     <script src="systems/sabotage.js"></script>
-    <script src="script.js"></script>
-    <script src="enhancements.js"></script>
+    <script src="script.min.js"></script>
+    <script src="enhancements.min.js"></script>
   </body>
 </html>
