@@ -21,8 +21,8 @@ function randRoomCode() {
 function setupMultiplayer(io) {
   /** @type {Map<string, { hostSocketId: string, saboteurSocketId: string|null, levelJson: string|null, clients: Map<string, { name: string, avatarId: string|null }>, match: { active: boolean, round: number, maxRounds: number, scores: Map<string, number> } }>} */
   const rooms = new Map();
-  /** @type {string|null} */
-  let randomQueueSocketId = null;
+  /** @type {Map<string, { name: string, avatarId: string|null, queuedAt: number }>} */
+  const randomQueue = new Map();
 
   function getRoomOfSocketId(socketId) {
     for (const [rid, room] of rooms) {
@@ -93,6 +93,7 @@ function setupMultiplayer(io) {
     room.match.round = 1;
     room.match.maxRounds = 5;
     room.match.scores.clear();
+    room.match.roundStartMs = Date.now();
     ensureScoreKeys(room);
     io.to(rid).emit("mp_match_state", serializeMatch(room));
     const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
@@ -192,25 +193,41 @@ function setupMultiplayer(io) {
           .slice(0, 18);
         const avatarId = payload && payload.avatarId != null ? String(payload.avatarId).trim().slice(0, 64) : null;
         removeSocketFromCurrentRoom(socket);
-        if (randomQueueSocketId === socket.id) {
+
+        // Already queued — idempotent
+        if (randomQueue.has(socket.id)) {
           if (typeof ack === "function") ack({ ok: true, waiting: true });
           return;
         }
-        const waitingSocket =
-          randomQueueSocketId && randomQueueSocketId !== socket.id ? io.sockets.sockets.get(randomQueueSocketId) : null;
-        if (!waitingSocket) {
-          randomQueueSocketId = socket.id;
+
+        // Find any other waiting socket that is still connected
+        let matchedId = null;
+        for (const [qid] of randomQueue) {
+          if (qid !== socket.id && io.sockets.sockets.has(qid)) {
+            matchedId = qid;
+            break;
+          }
+          // Stale entry (socket disconnected) — clean it up
+          randomQueue.delete(qid);
+        }
+
+        if (!matchedId) {
+          randomQueue.set(socket.id, { name, avatarId, queuedAt: Date.now() });
           socket.data.randomQueued = true;
           socket.data.randomProfile = { name, avatarId };
           if (typeof ack === "function") ack({ ok: true, waiting: true });
           return;
         }
-        randomQueueSocketId = null;
-        waitingSocket.data.randomQueued = false;
+
+        const waitingEntry = randomQueue.get(matchedId);
+        randomQueue.delete(matchedId);
         socket.data.randomQueued = false;
+        const waitingSocket = io.sockets.sockets.get(matchedId);
+        if (waitingSocket) waitingSocket.data.randomQueued = false;
+
         const hostSocket = waitingSocket;
         const guestSocket = socket;
-        const hostProfile = waitingSocket.data.randomProfile || { name: "Player", avatarId: null };
+        const hostProfile = waitingEntry || { name: "Player", avatarId: null };
         const guestProfile = { name, avatarId };
         let code = randRoomCode();
         while (rooms.has(code)) code = randRoomCode();
@@ -257,7 +274,7 @@ function setupMultiplayer(io) {
     });
 
     socket.on("mp_random_cancel", (_payload, ack) => {
-      if (randomQueueSocketId === socket.id) randomQueueSocketId = null;
+      randomQueue.delete(socket.id);
       socket.data.randomQueued = false;
       if (typeof ack === "function") ack({ ok: true });
     });
@@ -298,6 +315,13 @@ function setupMultiplayer(io) {
           if (typeof ack === "function") ack({ ok: false, error: "stale_round", match: serializeMatch(room) });
           return;
         }
+        // Time guard: reject wins that arrive impossibly fast (under 3 seconds from round start)
+        const MIN_ROUND_MS = 3000;
+        const elapsed = Date.now() - (room.match.roundStartMs || 0);
+        if (elapsed < MIN_ROUND_MS) {
+          if (typeof ack === "function") ack({ ok: false, error: "too_fast" });
+          return;
+        }
         const prev = room.match.scores.get(socket.id) || 0;
         room.match.scores.set(socket.id, prev + 1);
         if (room.match.round >= room.match.maxRounds) {
@@ -307,6 +331,7 @@ function setupMultiplayer(io) {
           return;
         }
         room.match.round += 1;
+        room.match.roundStartMs = Date.now();
         io.to(rid).emit("mp_match_state", serializeMatch(room));
         if (room.match.round === room.match.maxRounds) {
           io.to(room.hostSocketId).emit("mp_match_pick_final_level");
@@ -359,8 +384,20 @@ function setupMultiplayer(io) {
       if (!runRl.allow(socket.id + ":lvl")) return;
       const gr = getRoomOfSocketId(socket.id);
       if (!gr || socket.id !== gr.room.hostSocketId) return;
-      const levelJson = data && typeof data.levelJson === "string" ? data.levelJson.slice(0, 900_000) : "";
-      gr.room.levelJson = levelJson || null;
+      const raw = data && typeof data.levelJson === "string" ? data.levelJson.slice(0, 900_000) : "";
+      if (!raw) {
+        gr.room.levelJson = null;
+        socket.to(rid).emit("mp_level", { levelJson: null });
+        return;
+      }
+      // Validate JSON before storing — malformed payloads must not be broadcast to peers
+      try {
+        JSON.parse(raw);
+      } catch {
+        // Reject silently; don't update room state or broadcast
+        return;
+      }
+      gr.room.levelJson = raw;
       socket.to(rid).emit("mp_level", { levelJson: gr.room.levelJson });
     });
 
@@ -410,7 +447,7 @@ function setupMultiplayer(io) {
     });
 
     socket.on("disconnect", () => {
-      if (randomQueueSocketId === socket.id) randomQueueSocketId = null;
+      randomQueue.delete(socket.id);
       removeSocketFromCurrentRoom(socket);
       roomId = null;
     });

@@ -36,6 +36,7 @@
       betrayalDone: false,
       jumpPatternCount: 0,
       queued: [],
+      runStartMs: null,
       aggression: easyStreak ? 0.28 : 0.1,
       calmUntil: 2200 + rng() * 1200,
       chaosSpike: easyStreak || cursed,
@@ -87,7 +88,15 @@
       }
     }
 
-    function onJumpPattern() {}
+    function onJumpPattern() {
+      // Pattern-based escalation: each detected jump pattern tightens aggression
+      state.jumpPatternCount += 1;
+      if (state.jumpPatternCount % 3 === 0) {
+        state.aggression = Math.min(1, state.aggression + 0.06);
+        state.chaosSpike = true;
+        fire({ id: "jump_pattern_escalation", category: "behavior", intensity: 0.7 });
+      }
+    }
 
     function update(ctx) {
       const elapsed = Math.max(0, ctx.elapsedMs || 0);
@@ -162,7 +171,16 @@
       }
 
       if (jumpPressed && rng() < state.duplicateChance) {
-        jumpPressed = true;
+        // Re-queue the input for the next frame rather than forcing a second jump state.
+        // This avoids bypassing the double-jump powerup mechanic mid-air.
+        state.queued.push({
+          fireAt: nowMs + 80,
+          leftHeld,
+          rightHeld,
+          jumpPressed: true,
+          upHeld,
+          downHeld,
+        });
         state.uiFlicker = Math.max(state.uiFlicker, 0.45);
         fire({ id: "input_duplicate", category: "input", intensity: 0.6 });
       }
@@ -199,7 +217,10 @@
       isCursedSeed: () => cursed,
       getUnlockLevel: () => state.unlockLevel,
       // BUG FIX 1: Expose queue reset so createPlayState can flush stale delayed inputs between runs.
-      resetQueue: () => { state.queued = []; },
+      // Must be called on every respawn/restart to prevent phantom movements.
+      resetQueue: () => { state.queued = []; state.runStartMs = null; },
+      markRunStart: (nowMs) => { state.runStartMs = nowMs; },
+      getRunStartMs: () => state.runStartMs,
     };
   }
 

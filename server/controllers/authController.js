@@ -16,7 +16,7 @@ async function registerHandler(req, res) {
   const username = normalizeUsername(req.body && req.body.username);
   const password = String((req.body && req.body.password) || "");
   if (!username || !password) return res.status(400).json({ ok: false, error: "INVALID_INPUT" });
-  if (password.length < 4) return res.status(400).json({ ok: false, error: "PASSWORD_TOO_SHORT" });
+  if (password.length < 8) return res.status(400).json({ ok: false, error: "PASSWORD_TOO_SHORT" });
 
   const hash = await bcrypt.hash(password, 10);
   const out = await createAuthUser(username, hash);

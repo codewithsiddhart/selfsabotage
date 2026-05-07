@@ -79,6 +79,7 @@
               <div id="activePlayerSub" class="chipSub hidden" aria-live="polite"></div>
             </div>
           </div>
+          <button type="button" id="reopenHubBtn" class="btn reopenHubBtn" title="Open Player Hub" aria-label="Open Player Hub">🎮 Hub</button>
 
           <div class="mode">
             <button id="buildModeBtn" class="btn primary" type="button">Build</button>
@@ -176,6 +177,7 @@
             <div class="pill subtle">
               <span id="runHint">Build carefully.</span>
             </div>
+            <button type="button" id="showKeybindsBtn" class="btn subtle keybindsToggleBtn" title="Keyboard shortcuts" aria-label="Show keyboard shortcuts">⌨️ Keys</button>
           </div>
 
           <canvas id="game" width="960" height="576" aria-label="Game canvas" style="width:100%;height:auto;"></canvas>
@@ -189,6 +191,47 @@
                 <button id="endBuildBtn" class="btn" type="button">Build mode</button>
               </div>
             </div>
+          </div>
+
+          <!-- Keyboard shortcuts panel (toggled by ⌨️ Keys button) -->
+          <div id="keybindsPanel" class="keybindsPanel hidden" aria-hidden="true" role="dialog" aria-label="Keyboard shortcuts">
+            <div class="keybindsPanelHeader">
+              <span class="keybindsPanelTitle">⌨️ Keyboard Shortcuts</span>
+              <button type="button" id="closeKeybindsPanelBtn" class="iconBtn" aria-label="Close shortcuts">✕</button>
+            </div>
+            <div class="keybindsPanelBody">
+              <div class="keybindsSection">
+                <div class="keybindsSectionTitle">Game</div>
+                <div class="keybindRow"><kbd>P</kbd><span>Start / Play mode</span></div>
+                <div class="keybindRow"><kbd>B</kbd><span>Build mode</span></div>
+                <div class="keybindRow"><kbd>R</kbd><span>Restart run</span></div>
+                <div class="keybindRow"><kbd>W / ↑ / Space</kbd><span>Jump</span></div>
+                <div class="keybindRow"><kbd>A / ←</kbd><span>Move left</span></div>
+                <div class="keybindRow"><kbd>D / →</kbd><span>Move right</span></div>
+              </div>
+              <div class="keybindsSection">
+                <div class="keybindsSectionTitle">Menus</div>
+                <div class="keybindRow"><kbd>L</kbd><span>Levels</span></div>
+                <div class="keybindRow"><kbd>S</kbd><span>Settings</span></div>
+                <div class="keybindRow"><kbd>Shift+L</kbd><span>Leaderboard</span></div>
+                <div class="keybindRow"><kbd>Shift+I</kbd><span>Sign in / Log in</span></div>
+                <div class="keybindRow"><kbd>Shift+S</kbd><span>Sign up</span></div>
+                <div class="keybindRow"><kbd>Esc</kbd><span>Close modal / Settings</span></div>
+                <div class="keybindRow"><kbd>?</kbd><span>Toggle this panel</span></div>
+              </div>
+              <div class="keybindsSection">
+                <div class="keybindsSectionTitle">Editor</div>
+                <div class="keybindRow"><kbd>Ctrl+Z</kbd><span>Undo</span></div>
+                <div class="keybindRow"><kbd>Ctrl+Y</kbd><span>Redo</span></div>
+                <div class="keybindRow"><kbd>Ctrl+C</kbd><span>Copy region</span></div>
+                <div class="keybindRow"><kbd>Ctrl+V</kbd><span>Paste at cursor</span></div>
+                <div class="keybindRow"><kbd>Shift+Click</kbd><span>Set test spawn</span></div>
+                <div class="keybindRow"><kbd>Alt+Drag</kbd><span>Select region</span></div>
+                <div class="keybindRow"><kbd>Middle-drag</kbd><span>Pan map</span></div>
+                <div class="keybindRow"><kbd>Scroll</kbd><span>Pan / zoom map</span></div>
+              </div>
+            </div>
+            <div class="keybindsPanelFooter">Click anywhere outside or press <kbd>?</kbd> to close</div>
           </div>
           <div id="toast" class="toast" role="status" aria-live="polite"></div>
         </section>
