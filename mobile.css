@@ -1,0 +1,790 @@
+/*
+ * Self-Sabotage Builder — Mobile shell
+ * ---------------------------------------------------------------------------
+ * Everything in this file is scoped under html[data-device="mobile"]. It never
+ * changes desktop layout or styling. It reuses the theme CSS variables defined
+ * in style.css (--bg0, --accent, --danger, --ok, --gold, --radius, etc.) so it
+ * automatically matches whichever of the 5 themes the player has picked.
+ *
+ * Three screens, not one squeezed layout:
+ *   #mobileHome         — Player Hub, a full-screen scrollable menu
+ *   #mobileBuildShell    — Build Mode chrome (top bar, badges, FABs, toolbar)
+ *   #mobilePlayHud       — Play Mode's minimal HUD
+ * Build/Play chrome visibility is driven by the .mobileBuild / .mobilePlayFullscreen
+ * classes the engine already toggles on .app at every mode transition — no extra
+ * JS bookkeeping needed. Home visibility is the one thing mobile.js toggles directly.
+ */
+
+html[data-device="mobile"] {
+  --mSafeT: env(safe-area-inset-top, 0px);
+  --mSafeB: env(safe-area-inset-bottom, 0px);
+  --mSafeL: env(safe-area-inset-left, 0px);
+  --mSafeR: env(safe-area-inset-right, 0px);
+  --mBottomBarH: 84px;
+}
+
+/* ---------- Strip desktop chrome, make the app shell edge-to-edge ---------- */
+html[data-device="mobile"] .app {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  min-height: 100dvh;
+  display: block;
+}
+html[data-device="mobile"] .topbar,
+html[data-device="mobile"] .footer {
+  display: none !important;
+}
+html[data-device="mobile"] .main {
+  display: block;
+  min-height: 100dvh;
+}
+html[data-device="mobile"] .panel {
+  display: none !important;
+}
+html[data-device="mobile"] .stageWrap {
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  backdrop-filter: none;
+}
+html[data-device="mobile"] .stageWrap .hud {
+  display: none;
+}
+html[data-device="mobile"] canvas#game {
+  border-radius: 0;
+  border: none;
+  width: 100%;
+  height: auto;
+  display: block;
+}
+html[data-device="mobile"] .buildZoomViewport {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  touch-action: none;
+}
+
+/* ============================================================
+   Shared bits: icon buttons, badges, cards, sheets
+   ============================================================ */
+html[data-device="mobile"] .mobileIconBtn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+html[data-device="mobile"] .mobileIconBtn:active {
+  transform: scale(0.94);
+}
+
+html[data-device="mobile"] .mobileCard {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  border-radius: var(--radius2);
+  padding: 16px;
+  color: var(--text);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 30px var(--shadow);
+}
+
+html[data-device="mobile"] .mobileSheet {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+}
+html[data-device="mobile"] .mobileSheet.hidden {
+  display: none;
+}
+html[data-device="mobile"] .mobileSheetBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+html[data-device="mobile"] .mobileSheetPanel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 82dvh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, var(--bg1), var(--bg0));
+  border: 1px solid var(--panelBorder);
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  padding: 10px 16px calc(20px + var(--mSafeB));
+  box-shadow: 0 -18px 55px var(--shadow);
+  animation: mSheetUp 0.22s ease-out;
+}
+@keyframes mSheetUp {
+  from { transform: translateY(16px); opacity: 0.4; }
+  to { transform: translateY(0); opacity: 1; }
+}
+html[data-device="mobile"] .mobileSheetHandle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--faint);
+  margin: 8px auto 14px;
+}
+html[data-device="mobile"] .mobileSheetTitle {
+  font-weight: 900;
+  font-size: 15px;
+  margin: 4px 2px 12px;
+}
+html[data-device="mobile"] .mobileSheetItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 15px 12px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--panelBorder);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+html[data-device="mobile"] .mobileSheetItem:first-of-type {
+  border-top: none;
+}
+html[data-device="mobile"] .mobileSheetItem:active {
+  opacity: 0.65;
+}
+
+/* ============================================================
+   HOME SCREEN (Player Hub)
+   ============================================================ */
+html[data-device="mobile"] .mobileScreen.hidden {
+  display: none;
+}
+html[data-device="mobile"] #mobileHome {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: radial-gradient(1200px 800px at 15% 0%, rgba(122, 167, 255, 0.16), transparent 55%),
+    radial-gradient(900px 650px at 85% 15%, rgba(167, 139, 250, 0.12), transparent 55%),
+    linear-gradient(180deg, var(--bg1), var(--bg0));
+}
+html[data-device="mobile"] .mobileHomeScroll {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(16px + var(--mSafeT)) 16px calc(28px + var(--mSafeB));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+html[data-device="mobile"] .mobileHomeHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+html[data-device="mobile"] .mobileProfileCard {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 8px 14px 8px 8px;
+  color: var(--text);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+html[data-device="mobile"] .mobileProfileAvatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+html[data-device="mobile"] .mobileProfileInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+html[data-device="mobile"] .mobileProfileLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  font-weight: 800;
+}
+html[data-device="mobile"] .mobileProfileName {
+  font-size: 15px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-device="mobile"] .mobileProfileChevron {
+  color: var(--muted);
+  font-size: 20px;
+}
+
+html[data-device="mobile"] .mobileContinueCard {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(122, 167, 255, 0.22), rgba(167, 139, 250, 0.16));
+  border: 1px solid rgba(122, 167, 255, 0.35);
+}
+html[data-device="mobile"] .mobileContinueLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 900;
+  color: var(--accent);
+}
+html[data-device="mobile"] .mobileContinueLevelName {
+  font-size: 21px;
+  font-weight: 1000;
+  margin-top: 4px;
+}
+html[data-device="mobile"] .mobileContinueMeta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+html[data-device="mobile"] .mobileContinuePlayIcon {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0a0f1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  box-shadow: 0 8px 22px rgba(122, 167, 255, 0.45);
+}
+
+html[data-device="mobile"] .mobileQuickRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+html[data-device="mobile"] .mobileQuickBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 6px;
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+}
+html[data-device="mobile"] .mobileQuickBtn:active {
+  transform: scale(0.96);
+}
+html[data-device="mobile"] .mobileQuickIcon {
+  font-size: 22px;
+}
+
+html[data-device="mobile"] .mobileSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+html[data-device="mobile"] .mobileSectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+html[data-device="mobile"] .mobileSectionHead h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+}
+html[data-device="mobile"] .mobileSectionNote {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+html[data-device="mobile"] .mobileLevelTabs {
+  display: flex;
+  gap: 8px;
+}
+html[data-device="mobile"] .mobileLevelTab {
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 999px;
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12.5px;
+}
+html[data-device="mobile"] .mobileLevelTab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0f1f;
+}
+
+html[data-device="mobile"] .mobileLevelCards {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+html[data-device="mobile"] .mobileLevelCard {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  width: 148px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  padding: 14px 12px;
+  text-align: left;
+  color: var(--text);
+  position: relative;
+  overflow: hidden;
+}
+html[data-device="mobile"] .mobileLevelCard::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--accent);
+}
+html[data-device="mobile"] .mobileLevelCard.tier-medium::before { background: var(--gold); }
+html[data-device="mobile"] .mobileLevelCard.tier-hard::before { background: var(--danger); }
+html[data-device="mobile"] .mobileLevelCard .mLevelName {
+  font-weight: 900;
+  font-size: 14px;
+  margin-bottom: 6px;
+  line-height: 1.2;
+}
+html[data-device="mobile"] .mobileLevelCard .mLevelMeta {
+  font-size: 11px;
+  color: var(--muted);
+}
+html[data-device="mobile"] .mobileLevelCard .mLevelBest {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ok);
+}
+
+html[data-device="mobile"] .mobilePowerupRow {
+  display: flex;
+  gap: 10px;
+}
+html[data-device="mobile"] .mobilePowerupChip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+html[data-device="mobile"] .mobilePowerupChip .mPowerupIcon {
+  font-size: 18px;
+}
+html[data-device="mobile"] .mobilePowerupChip.active {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: rgba(45, 212, 191, 0.12);
+}
+html[data-device="mobile"] .mobilePowerupChip[disabled] {
+  opacity: 0.4;
+}
+
+html[data-device="mobile"] .mobileInstructionsText {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+
+html[data-device="mobile"] .mobileHomeFooterSpace {
+  height: 6px;
+}
+
+html[data-device="mobile"] .mobilePlayerList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40dvh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+html[data-device="mobile"] .mobilePlayerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--panelBorder);
+  background: var(--panel);
+  font-weight: 700;
+  font-size: 14px;
+}
+html[data-device="mobile"] .mobilePlayerRow.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+html[data-device="mobile"] .mobileNewPlayerRow {
+  display: flex;
+  gap: 8px;
+}
+html[data-device="mobile"] .mobileNewPlayerRow .input {
+  flex: 1;
+}
+
+/* ============================================================
+   BUILD MODE shell
+   ============================================================ */
+/* Unconditional baseline: this element is only ever revealed from inside the
+   html[data-device="mobile"] scope below. Without this bare rule, desktop
+   (html[data-device="desktop"]) never matches ANY selector for this element
+   — not even a hide rule — so it falls back to default static <div>
+   rendering instead of staying hidden. */
+.mobileBuildShell {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+}
+html[data-device="mobile"] .mobileBuildShell.mVisible {
+  display: block;
+}
+html[data-device="mobile"] .mobileBuildShell > * {
+  pointer-events: auto;
+}
+
+html[data-device="mobile"] .mobileBuildTop {
+  position: absolute;
+  top: calc(10px + var(--mSafeT));
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html[data-device="mobile"] .mobileBuildBadges {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+html[data-device="mobile"] .mobileBadge {
+  border: 1px solid var(--panelBorder);
+  background: rgba(10, 14, 28, 0.72);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 9px 13px;
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46vw;
+  backdrop-filter: blur(10px);
+}
+html[data-device="mobile"] .mobileBadge.ok { color: var(--ok); border-color: rgba(45, 212, 191, 0.4); }
+html[data-device="mobile"] .mobileBadge.warn { color: var(--danger); border-color: rgba(255, 77, 109, 0.4); }
+html[data-device="mobile"] .mobileBadge.tier-medium { color: var(--gold); }
+html[data-device="mobile"] .mobileBadge.tier-hard { color: var(--danger); }
+
+html[data-device="mobile"] .mobilePlayFab {
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  border-radius: 999px;
+  border: none;
+  background: var(--ok);
+  color: #06251f;
+  font-size: 17px;
+  box-shadow: 0 10px 26px rgba(45, 212, 191, 0.4);
+}
+html[data-device="mobile"] .mobilePlayFab:active {
+  transform: scale(0.94);
+}
+
+html[data-device="mobile"] .mBadgeDetail {
+  position: absolute;
+  top: calc(58px + var(--mSafeT));
+  left: 10px;
+  right: 10px;
+  background: rgba(10, 14, 28, 0.9);
+  border: 1px solid var(--panelBorder);
+  border-radius: 14px;
+  padding: 10px 12px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 32px var(--shadow);
+}
+html[data-device="mobile"] .mBadgeDetail.hidden {
+  display: none;
+}
+html[data-device="mobile"] .mBadgeDetailRow {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 3px 0;
+}
+html[data-device="mobile"] .mBadgeDetailRow:first-child {
+  color: var(--text);
+  font-weight: 700;
+}
+
+html[data-device="mobile"] .mobileBuildFabs {
+  position: absolute;
+  right: 10px;
+  bottom: calc(var(--mBottomBarH) + 14px + var(--mSafeB));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+html[data-device="mobile"] .mobileFab {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  border: 1px solid var(--panelBorder);
+  background: rgba(10, 14, 28, 0.82);
+  color: var(--text);
+  font-size: 19px;
+  box-shadow: 0 10px 26px var(--shadow);
+  backdrop-filter: blur(10px);
+}
+html[data-device="mobile"] .mobileFab:active {
+  transform: scale(0.92);
+}
+html[data-device="mobile"] .mobileFab[disabled] {
+  opacity: 0.35;
+}
+html[data-device="mobile"] .mobileFab.mobileFabDanger {
+  color: var(--danger);
+  border-color: rgba(255, 77, 109, 0.35);
+}
+html[data-device="mobile"] .mobileFab.mobileFabDanger.confirmArm {
+  background: var(--danger);
+  color: #2a060c;
+  animation: mPulse 0.9s ease-in-out infinite;
+}
+@keyframes mPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 109, 0.55); }
+  50% { box-shadow: 0 0 0 10px rgba(255, 77, 109, 0); }
+}
+
+html[data-device="mobile"] .mobileToolbarWrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 10px calc(10px + var(--mSafeB));
+  background: linear-gradient(0deg, var(--bg0) 40%, transparent);
+}
+html[data-device="mobile"] .mobileToolbar {
+  height: var(--mBottomBarH);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 4px;
+  background: rgba(10, 14, 28, 0.82);
+  border: 1px solid var(--panelBorder);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 16px 40px var(--shadow);
+}
+html[data-device="mobile"] .mToolBtn {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 20px;
+}
+html[data-device="mobile"] .mToolBtn .mToolLabel {
+  font-size: 8.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--muted);
+}
+html[data-device="mobile"] .mToolBtn.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+html[data-device="mobile"] .mToolBtn.selected .mToolLabel {
+  color: #0a0f1f;
+}
+html[data-device="mobile"] .mToolBtn:active {
+  transform: scale(0.93);
+}
+
+/* ============================================================
+   PLAY MODE — minimal HUD
+   ============================================================ */
+/* Same unconditional-baseline fix as .mobileBuildShell above. */
+.mobilePlayHud {
+  display: none;
+  position: fixed;
+  top: calc(12px + var(--mSafeT));
+  left: 12px;
+  right: 12px;
+  z-index: 15;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+html[data-device="mobile"] .mobilePlayHud.mVisible {
+  display: flex;
+}
+html[data-device="mobile"] .mobilePlayPill {
+  background: rgba(10, 14, 28, 0.72);
+  border: 1px solid var(--panelBorder);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-device="mobile"] .mobilePlayerChip {
+  max-width: 34vw;
+  color: var(--muted);
+}
+
+/* Reposition the existing timer pill for the mobile play HUD (it's shown via the engine's
+   own .mobilePlayFullscreen rule; we just move/restyle it to sit next to our pills). */
+html[data-device="mobile"] .app.mobilePlayFullscreen .stageWrap .hud {
+  display: flex !important;
+  position: fixed;
+  top: calc(12px + var(--mSafeT));
+  right: 12px;
+  left: auto;
+  z-index: 16;
+  width: auto;
+}
+html[data-device="mobile"] .app.mobilePlayFullscreen .stageWrap .hud .pill:not(#timerPill) {
+  display: none !important;
+}
+html[data-device="mobile"] .app.mobilePlayFullscreen #timerPill {
+  position: static;
+  background: rgba(10, 14, 28, 0.72);
+  border: 1px solid var(--panelBorder);
+  backdrop-filter: blur(10px);
+}
+
+/* Bigger, thumb-friendly touch controls + safe-area aware placement */
+html[data-device="mobile"] .touchControls {
+  padding-bottom: var(--mSafeB);
+  padding-left: var(--mSafeL);
+  padding-right: var(--mSafeR);
+}
+html[data-device="mobile"] .touchControls .touchBtn {
+  width: 74px;
+  height: 74px;
+  font-size: 30px;
+}
+
+/* End-of-run overlay: comfortable spacing on small screens */
+html[data-device="mobile"] .endOverlayContent {
+  width: min(92vw, 420px);
+  padding: 22px 18px;
+}
+html[data-device="mobile"] .endOverlayActions {
+  flex-direction: column;
+}
+html[data-device="mobile"] .endOverlayActions .btn {
+  width: 100%;
+  min-height: 48px;
+}
+
+/* ============================================================
+   Bottom sheets / modals opened from mobile (Leaderboard, Settings, Levels)
+   restyled to feel like native sheets instead of centered desktop dialogs
+   ============================================================ */
+html[data-device="mobile"] .backdrop {
+  z-index: 40;
+}
+html[data-device="mobile"] .modal:not(.deviceModal) {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  max-height: 86dvh;
+  overflow-y: auto;
+  border-radius: 22px 22px 0 0;
+  padding-bottom: calc(20px + var(--mSafeB));
+  z-index: 50;
+}
+
+/* Device modal: full-screen welcome on mobile-sized viewports, recommended option highlighted
+   via .recommended (added by mobile.js based on touch/pointer detection) */
+html[data-device="mobile"] .deviceBtn.recommended {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(122, 167, 255, 0.35);
+}
+html[data-device="mobile"] .deviceBtn .recommendedTag {
+  display: block;
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 2px;
+}
