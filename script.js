@@ -78,6 +78,18 @@
   const elQuickRandomBtn = /** @type {HTMLButtonElement} */ ($("quickRandomBtn"));
   const elLevelListByTier = $("levelListByTier");
 
+  const elOpenBuiltinLevelsBtn = /** @type {HTMLButtonElement | null} */ ($("openBuiltinLevelsBtn"));
+  const elBuiltinLevelsModal = $("builtinLevelsModal");
+  const elCloseBuiltinLevelsModalBtn = /** @type {HTMLButtonElement | null} */ ($("closeBuiltinLevelsModalBtn"));
+  const elBuiltinLevelsSearchInput = /** @type {HTMLInputElement | null} */ ($("builtinLevelsSearchInput"));
+  const elStartModalBrowseLevelsBtn = /** @type {HTMLButtonElement | null} */ ($("startModalBrowseLevelsBtn"));
+
+  const elBuildTeaser = $("buildTeaser");
+
+  /** Every top-level modal, in one place, so "close everything" / "what's open right now"
+   *  logic (backdrop click, Escape) never falls out of sync when a modal is added. */
+  const ALL_MODALS = [elStartModal, elLevelsModal, elLeaderboardModal, elSettingsModal, elBuiltinLevelsModal];
+
   const elEndOverlay = $("endOverlay");
   const elEndOverlayMessage = $("endOverlayMessage");
   const elEndOverlayStats = $("endOverlayStats");
@@ -286,7 +298,8 @@
    *   sabotageLevel:number,
    *   keybinds: Record<string, string>,
    *   debugOverlay: boolean,
-   *   ambientNoise: "off"|"white"|"pink"|"brown"
+   *   ambientNoise: "off"|"white"|"pink"|"brown",
+   *   seenCustomLevels: string[]
    * }} settings
    * @property {Record<string, PlayerRecord>} players
    */
@@ -314,10 +327,30 @@
       if (!allowedBg.includes(parsed.settings.background)) parsed.settings.background = "nebula";
       if (typeof parsed.settings.volume !== "number") parsed.settings.volume = 0.7;
       if (typeof parsed.settings.sabotageLevel !== "number") parsed.settings.sabotageLevel = 5;
-      if (!parsed.settings.keybinds) parsed.settings.keybinds = defaultKeybinds();
+      if (!parsed.settings.keybinds) {
+        parsed.settings.keybinds = defaultKeybinds();
+      } else {
+        // Upgrade path: fold in any newly-added actions without clobbering the player's
+        // existing custom bindings, and without silently creating a key collision. If the
+        // new action's default key is already claimed by something else in this save, leave
+        // it unbound ("") rather than double-binding — the player can assign it themselves
+        // from Settings, where the collision-avoidance logic will guide them.
+        const defaults = defaultKeybinds();
+        const used = new Set(Object.values(parsed.settings.keybinds).filter(Boolean));
+        for (const [id, key] of Object.entries(defaults)) {
+          if (parsed.settings.keybinds[id]) continue;
+          if (used.has(key)) {
+            parsed.settings.keybinds[id] = "";
+          } else {
+            parsed.settings.keybinds[id] = key;
+            used.add(key);
+          }
+        }
+      }
       if (typeof parsed.settings.debugOverlay !== "boolean") parsed.settings.debugOverlay = false;
       const amb = parsed.settings.ambientNoise;
       if (amb !== "off" && amb !== "white" && amb !== "pink" && amb !== "brown") parsed.settings.ambientNoise = "off";
+      if (!Array.isArray(parsed.settings.seenCustomLevels)) parsed.settings.seenCustomLevels = [];
       if (!("activePlayerId" in parsed)) parsed.activePlayerId = null;
       return /** @type {SaveData} */ (parsed);
     } catch {
@@ -338,6 +371,7 @@
         keybinds: defaultKeybinds(),
         debugOverlay: false,
         ambientNoise: "off",
+        seenCustomLevels: [],
       },
       players: {},
     });
@@ -345,12 +379,45 @@
 
   function defaultKeybinds() {
     // Stored as normalized keys from normalizeKey(): arrowleft, arrowright, w, a, space, etc.
+    // Reserved and never assignable here: a, d, w, space, arrowleft, arrowright, arrowup
+    // (hardcoded movement/jump controls — see stepPlayer/updatePlay).
     return /** @type {Record<string, string>} */ ({
+      // General
       restart: "r",
       toggleBuild: "b",
       togglePlay: "p",
       openSettings: "escape",
+      viewShortcuts: "/",
+
+      // Menus
+      openPlayerMenu: "m",
+      openBuiltinLevels: "k",
       openLevels: "l",
+      openLeaderboard: "o",
+      findMatch: "f",
+
+      // Build tools
+      saveLevel: "s",
+      clearGrid: "x",
+      undo: "z",
+      redo: "y",
+
+      // Settings toggles
+      toggleSound: "v",
+      toggleDebugOverlay: "g",
+
+      // Tiles (build mode only)
+      tileStart: "1",
+      tileGoal: "2",
+      tilePlatform: "3",
+      tileSpikes: "4",
+      tileJumppad: "5",
+      tileHex: "6",
+      tileLava: "7",
+      tileSpeedBoost: "8",
+      tileFood: "9",
+      tilePathBlock: "0",
+      tileEraser: "e",
     });
   }
 
@@ -659,6 +726,21 @@
         lose: () => noiseBurst(180, 0.26),
         step: () => blip("square", 160, 25, 0.06),
         curse: () => blip("sawtooth", 240, 120, 0.14),
+        // New: subtle UI feedback so every hover/click has a sound, not just build/play actions.
+        uiHover: () => blip("sine", 380, 24, 0.05),
+        uiClick: () => blip("square", 460, 40, 0.14),
+        // New: menu open/close have distinct rising/falling tones so transitions read as such.
+        menuOpen: () => blip("sine", 480, 90, 0.16),
+        menuClose: () => blip("sine", 320, 90, 0.13),
+        // New: a soft thud when the player touches back down after airtime.
+        landing: () => blip("triangle", 150, 45, 0.14),
+        // New: a crumble sound the instant a sabotaged platform actually gives way.
+        platformBreak: () => noiseBurst(130, 0.2),
+        // New: a short ominous cue for a sabotage effect switching on (spikes arming,
+        // a hex curse landing) — distinct from the death/lose sound.
+        sabotageTrigger: () => blip("sawtooth", 300, 90, 0.15),
+        // New: a light double-blip for toast notifications (food, powerups, etc).
+        notify: () => blip("sine", 660, 70, 0.16),
       },
     };
   })();
@@ -769,13 +851,66 @@
   const input = new Input();
 
   // ---------- Actions / keybinds ----------
+  // Every action here gets a real, rebindable hotkey (see defaultKeybinds) and shows up in the
+  // grouped "Keyboard Shortcuts" list in Settings (buildKeybindUI). None of these fire while a
+  // run is in progress (mode === "play") — see the "Global hotkeys" block in frame() — so they
+  // can never collide with movement/jump, and gameplay never gets interrupted by a stray key.
   const Actions = /** @type {const} */ ({
-    restart: { label: "Restart", desc: "Restart the current run" },
-    toggleBuild: { label: "Build mode", desc: "Switch to Build mode" },
-    togglePlay: { label: "Play mode", desc: "Switch to Play mode" },
-    openSettings: { label: "Settings", desc: "Open/close Settings" },
-    openLevels: { label: "Levels", desc: "Open/close Levels" },
+    // General
+    restart: { label: "Restart", desc: "Restart the current run (works during play)", cat: "General" },
+    toggleBuild: { label: "Build mode", desc: "Switch to Build mode", cat: "General" },
+    togglePlay: { label: "Play mode", desc: "Switch to Play mode", cat: "General" },
+    openSettings: { label: "Settings", desc: "Open Settings, or close whichever menu is open", cat: "General" },
+    viewShortcuts: { label: "Keyboard shortcuts", desc: "Jump straight to this list", cat: "General" },
+
+    // Menus
+    openPlayerMenu: { label: "Player menu", desc: "Open the Welcome / switch-player screen", cat: "Menus" },
+    openBuiltinLevels: { label: "Built-in levels", desc: "Browse and play the built-in level set", cat: "Menus" },
+    openLevels: { label: "Saved levels", desc: "Save/Load your own levels", cat: "Menus" },
+    openLeaderboard: { label: "Leaderboard", desc: "Open the local leaderboard", cat: "Menus" },
+    findMatch: { label: "Find match", desc: "Queue for online multiplayer", cat: "Menus" },
+
+    // Build tools
+    saveLevel: { label: "Save level", desc: "Open the save dialog for your current build", cat: "Build tools" },
+    clearGrid: { label: "Clear grid", desc: "Erase every tile on the canvas", cat: "Build tools" },
+    undo: { label: "Undo", desc: "Undo the last build edit", cat: "Build tools" },
+    redo: { label: "Redo", desc: "Redo the last undone edit", cat: "Build tools" },
+
+    // Settings
+    toggleSound: { label: "Toggle sound", desc: "Mute/unmute SFX and ambience", cat: "Settings" },
+    toggleDebugOverlay: { label: "Toggle debug overlay", desc: "Show/hide hitbox & path debug view", cat: "Settings" },
+
+    // Tiles (build mode only)
+    tileStart: { label: "Tile: Start", desc: "Select the Start tile", cat: "Tiles" },
+    tileGoal: { label: "Tile: Goal", desc: "Select the Goal tile", cat: "Tiles" },
+    tilePlatform: { label: "Tile: Platform", desc: "Select the Platform tile", cat: "Tiles" },
+    tileSpikes: { label: "Tile: Spikes", desc: "Select the Spikes tile", cat: "Tiles" },
+    tileJumppad: { label: "Tile: Jump Pad", desc: "Select the Jump Pad tile", cat: "Tiles" },
+    tileHex: { label: "Tile: Hex", desc: "Select the Hex tile", cat: "Tiles" },
+    tileLava: { label: "Tile: Lava", desc: "Select the Lava tile", cat: "Tiles" },
+    tileSpeedBoost: { label: "Tile: Speed", desc: "Select the Speed tile", cat: "Tiles" },
+    tileFood: { label: "Tile: Food", desc: "Select the Food tile", cat: "Tiles" },
+    tilePathBlock: { label: "Tile: Path Block", desc: "Select the Path Block tile", cat: "Tiles" },
+    tileEraser: { label: "Tile: Eraser", desc: "Select the Eraser", cat: "Tiles" },
   });
+
+  /** Maps a TileType to the action id that selects it, for generic hotkey dispatch. */
+  const TILE_ACTION_MAP = /** @type {Record<string,string>} */ ({
+    [Tile.start]: "tileStart",
+    [Tile.goal]: "tileGoal",
+    [Tile.platform]: "tilePlatform",
+    [Tile.spikes]: "tileSpikes",
+    [Tile.jumppad]: "tileJumppad",
+    [Tile.hex]: "tileHex",
+    [Tile.lava]: "tileLava",
+    [Tile.speedBoost]: "tileSpeedBoost",
+    [Tile.food]: "tileFood",
+    [Tile.pathBlock]: "tilePathBlock",
+    [Tile.empty]: "tileEraser",
+  });
+
+  /** Keys hardcoded to movement/jump — never assignable to an action, in any category. */
+  const RESERVED_MOVEMENT_KEYS = new Set(["a", "d", "w", "space", "arrowleft", "arrowright", "arrowup"]);
 
   function keyForAction(actionId) {
     const k = save.settings.keybinds && save.settings.keybinds[actionId];
@@ -791,44 +926,63 @@
     return k;
   }
 
+  const KEYBIND_CATEGORIES = /** @type {const} */ (["General", "Menus", "Build tools", "Settings", "Tiles"]);
+
+  /** Full, grouped list of every action + its current key. Doubles as the "view all shortcuts"
+   *  feature: this is the single source of truth Settings shows, so it's always complete and
+   *  always up to date — nothing to keep in sync separately. */
   function buildKeybindUI() {
     if (!elKeybindList) return;
     elKeybindList.innerHTML = "";
-    for (const [id, meta] of Object.entries(Actions)) {
-      const row = document.createElement("div");
-      row.className = "listItem";
-      const left = document.createElement("div");
-      left.className = "meta";
-      const name = document.createElement("div");
-      name.className = "name";
-      name.textContent = meta.label;
-      const sub = document.createElement("div");
-      sub.className = "sub";
-      sub.textContent = meta.desc;
-      left.appendChild(name);
-      left.appendChild(sub);
+    for (const cat of KEYBIND_CATEGORIES) {
+      const ids = Object.keys(Actions).filter((id) => Actions[id].cat === cat);
+      if (ids.length === 0) continue;
 
-      const actions = document.createElement("div");
-      actions.className = "actions";
-      const pill = document.createElement("div");
-      pill.className = "kbd";
-      pill.textContent = prettyKey(keyForAction(id));
-      const btn = document.createElement("button");
-      btn.className = "btn";
-      btn.type = "button";
-      btn.textContent = "Change";
-      btn.addEventListener("click", () => {
-        keybindUI.action = id;
-        pill.classList.add("listening");
-        pill.textContent = "Press a key…";
-        showToast(`Rebinding: ${meta.label}`);
-      });
+      const header = document.createElement("div");
+      header.className = "kbdGroupTitle";
+      header.textContent = cat;
+      elKeybindList.appendChild(header);
 
-      actions.appendChild(pill);
-      actions.appendChild(btn);
-      row.appendChild(left);
-      row.appendChild(actions);
-      elKeybindList.appendChild(row);
+      for (const id of ids) {
+        const meta = Actions[id];
+        const row = document.createElement("div");
+        row.className = "listItem";
+        const left = document.createElement("div");
+        left.className = "meta";
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = meta.label;
+        const sub = document.createElement("div");
+        sub.className = "sub";
+        sub.textContent = meta.desc;
+        left.appendChild(name);
+        left.appendChild(sub);
+
+        const rowActions = document.createElement("div");
+        rowActions.className = "actions";
+        const pill = document.createElement("div");
+        pill.className = "kbd";
+        const currentKey = keyForAction(id);
+        pill.textContent = currentKey ? prettyKey(currentKey) : "Unbound";
+        if (!currentKey) pill.classList.add("unbound");
+        const btn = document.createElement("button");
+        btn.className = "btn";
+        btn.type = "button";
+        btn.textContent = "Change";
+        btn.addEventListener("click", () => {
+          keybindUI.action = id;
+          pill.classList.remove("unbound");
+          pill.classList.add("listening");
+          pill.textContent = "Press a key…";
+          showToast(`Rebinding: ${meta.label}`);
+        });
+
+        rowActions.appendChild(pill);
+        rowActions.appendChild(btn);
+        row.appendChild(left);
+        row.appendChild(rowActions);
+        elKeybindList.appendChild(row);
+      }
     }
   }
 
@@ -845,11 +999,27 @@
         showToast("Cancelled rebind.");
         return;
       }
-      save.settings.keybinds[keybindUI.action] = k;
+      if (RESERVED_MOVEMENT_KEYS.has(k)) {
+        showToast(`"${prettyKey(k)}" is reserved for movement/jump and can't be reassigned.`);
+        return;
+      }
+      // No two actions may share a key ("no overlapping any key"). If this key already
+      // belongs to a different action, free it there first rather than silently double-binding.
+      const actionId = keybindUI.action;
+      const prevOwner = Object.keys(save.settings.keybinds).find(
+        (id) => id !== actionId && save.settings.keybinds[id] === k
+      );
+      if (prevOwner) {
+        save.settings.keybinds[prevOwner] = "";
+        const ownerLabel = (Actions[prevOwner] && Actions[prevOwner].label) || prevOwner;
+        showToast(`"${prettyKey(k)}" was used by ${ownerLabel} — moved here instead.`);
+      } else {
+        showToast("Keybind saved.");
+      }
+      save.settings.keybinds[actionId] = k;
       keybindUI.action = null;
       persist();
       buildKeybindUI();
-      showToast("Keybind saved.");
     },
     { passive: false }
   );
@@ -860,6 +1030,7 @@
     elToast.textContent = msg;
     elToast.classList.add("show");
     toastTimer = performance.now() + ms;
+    AudioSys.sfx.notify();
   }
   function updateToast(now) {
     if (!toastTimer) return;
@@ -875,16 +1046,25 @@
     el.classList.remove("hidden");
     elBackdrop.setAttribute("aria-hidden", "false");
     if (el === elSettingsModal) buildKeybindUI();
+    AudioSys.sfx.menuOpen();
   }
   function closeModal(el) {
+    const wasOpen = !el.classList.contains("hidden");
     el.classList.add("hidden");
+    if (wasOpen) AudioSys.sfx.menuClose();
     if (allModalsClosed()) {
       elBackdrop.classList.add("hidden");
       elBackdrop.setAttribute("aria-hidden", "true");
     }
   }
   function allModalsClosed() {
-    return [elStartModal, elLevelsModal, elLeaderboardModal, elSettingsModal].every((m) => m.classList.contains("hidden"));
+    return ALL_MODALS.every((m) => !m || m.classList.contains("hidden"));
+  }
+
+  /** Returns the first currently-open modal, or null. Used to make Escape close "whatever's
+   *  open" instead of always specifically toggling Settings. */
+  function anyOpenModal() {
+    return ALL_MODALS.find((m) => m && !m.classList.contains("hidden")) || null;
   }
 
   function openStartModal() {
@@ -894,7 +1074,6 @@
     }
     openModal(elStartModal);
     renderPlayerList("");
-    renderLevelListByTier();
     syncPowerupUI();
   }
 
@@ -2071,21 +2250,67 @@
   }
 
   let selectedTier = "easy";
+  /**
+   * Renders the dedicated Built-in Levels list. With an active search query it searches by
+   * name across every tier (tier tabs are ignored while searching, and each result shows its
+   * own tier badge); with an empty query it falls back to the selected tier tab, as before.
+   */
   function renderLevelListByTier() {
     if (!elLevelListByTier) return;
-    const levels = BUILTIN_LEVELS.filter((l) => l.tier === selectedTier);
+    const q = ((elBuiltinLevelsSearchInput && elBuiltinLevelsSearchInput.value) || "").trim().toLowerCase();
     elLevelListByTier.innerHTML = "";
+
+    /** @type {{lvl: any, i: number}[]} */
+    const matches = [];
     for (let i = 0; i < BUILTIN_LEVELS.length; i++) {
       const lvl = BUILTIN_LEVELS[i];
-      if (lvl.tier !== selectedTier) continue;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn levelSelectBtn";
-      btn.textContent = lvl.name;
-      btn.dataset.levelId = lvl.id;
-      btn.dataset.levelIndex = String(i);
-      btn.addEventListener("click", () => launchBuiltinLevel(i));
-      elLevelListByTier.appendChild(btn);
+      if (q) {
+        if (!lvl.name.toLowerCase().includes(q)) continue;
+      } else if (lvl.tier !== selectedTier) {
+        continue;
+      }
+      matches.push({ lvl, i });
+    }
+
+    if (matches.length === 0) {
+      elLevelListByTier.appendChild(makeEmptyLine(q ? `No levels match "${q}".` : "No levels in this tier."));
+      return;
+    }
+
+    for (const { lvl, i } of matches) {
+      const card = document.createElement("div");
+      card.className = "listItem builtinLevelCard";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = lvl.name;
+      const sub = document.createElement("div");
+      sub.className = "sub builtinLevelSub";
+      const badge = document.createElement("span");
+      badge.className = "tierBadge tierBadge--" + lvl.tier;
+      badge.textContent = lvl.tier.charAt(0).toUpperCase() + lvl.tier.slice(1);
+      sub.appendChild(badge);
+      const stats = builtinLevelStats[lvl.id];
+      if (stats && stats.bestTimeMs < Infinity) {
+        sub.appendChild(document.createTextNode(` · Best ${(stats.bestTimeMs / 1000).toFixed(1)}s`));
+      }
+      meta.appendChild(name);
+      meta.appendChild(sub);
+
+      const rowActions = document.createElement("div");
+      rowActions.className = "actions";
+      const playBtn = document.createElement("button");
+      playBtn.className = "btn primary";
+      playBtn.type = "button";
+      playBtn.textContent = "▶ Play";
+      playBtn.addEventListener("click", () => launchBuiltinLevel(i));
+      rowActions.appendChild(playBtn);
+
+      card.appendChild(meta);
+      card.appendChild(rowActions);
+      elLevelListByTier.appendChild(card);
     }
   }
 
@@ -2095,6 +2320,7 @@
     if (!lvl) return;
     loadFlatIntoGrid(lvl.tilesFlat);
     closeModal(elStartModal);
+    closeModal(elBuiltinLevelsModal);
     startPlay(lvl.id, index);
   }
 
@@ -2103,6 +2329,7 @@
       selectedTier = tab.dataset.tier || "easy";
       document.querySelectorAll(".levelTab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
+      if (elBuiltinLevelsSearchInput) elBuiltinLevelsSearchInput.value = "";
       renderLevelListByTier();
     });
   });
@@ -2503,6 +2730,7 @@
   elQuickRandomBtn.addEventListener("click", () => {
     loadFlatIntoGrid(generateRandomLevel());
     closeModal(elStartModal);
+    closeModal(elBuiltinLevelsModal);
     startPlay(null, null);
   });
 
@@ -2569,15 +2797,32 @@
 
   // ---------- Modal close wiring ----------
   elBackdrop.addEventListener("click", () => {
-    closeModal(elStartModal);
-    closeModal(elLevelsModal);
-    closeModal(elLeaderboardModal);
-    closeModal(elSettingsModal);
+    for (const m of ALL_MODALS) if (m) closeModal(m);
   });
   elCloseStartModalBtn.addEventListener("click", () => closeModal(elStartModal));
   elCloseLevelsModalBtn.addEventListener("click", () => closeModal(elLevelsModal));
   elCloseLeaderboardModalBtn.addEventListener("click", () => closeModal(elLeaderboardModal));
   elCloseSettingsModalBtn.addEventListener("click", () => closeModal(elSettingsModal));
+
+  // ---------- Built-in Levels modal (dedicated screen, own button, search) ----------
+  if (elOpenBuiltinLevelsBtn) {
+    elOpenBuiltinLevelsBtn.addEventListener("click", () => {
+      openModal(elBuiltinLevelsModal);
+      renderLevelListByTier();
+    });
+  }
+  if (elCloseBuiltinLevelsModalBtn) {
+    elCloseBuiltinLevelsModalBtn.addEventListener("click", () => closeModal(elBuiltinLevelsModal));
+  }
+  if (elStartModalBrowseLevelsBtn) {
+    elStartModalBrowseLevelsBtn.addEventListener("click", () => {
+      closeModal(elStartModal);
+      if (elOpenBuiltinLevelsBtn) elOpenBuiltinLevelsBtn.click();
+    });
+  }
+  if (elBuiltinLevelsSearchInput) {
+    elBuiltinLevelsSearchInput.addEventListener("input", () => renderLevelListByTier());
+  }
 
   // ---------- Play mode engine ----------
   /**
@@ -2652,6 +2897,8 @@
    * @property {number} timerRemainingMs
    * @property {{doubleJump:boolean,speedBoost:boolean,protection:boolean}} usedPowerups
    * @property {{runSeed?:number,noPowerups?:boolean,skipProfileMutation?:boolean}|null} mpOpts
+   * @property {{gx:number,gy:number,type:TileType,sab:TileSabotage,atMs:number}|null} lastStand
+   * @property {boolean} showBuildTeaser
    */
 
   /** @type {PlayState | null} */
@@ -2879,6 +3126,8 @@
       timerRemainingMs: timerLimitMs,
       usedPowerups,
       mpOpts: mpOpts || null,
+      lastStand: null,
+      showBuildTeaser: false,
     };
 
     if (usedPowerups.speedBoost) state.effects.speedBoostUntil = t0 + 3500;
@@ -3081,7 +3330,7 @@
     if (play.timerLimitMs > 0) {
       play.timerRemainingMs -= dt;
       if (play.timerRemainingMs <= 0) {
-        end(play, "lose", "Time's up!");
+        end(play, "lose", "Time's up — the timer ran out before you reached the Goal.");
         updateTimerPill(play);
         return;
       }
@@ -3105,7 +3354,7 @@
           addShake(play, 8);
           play.hammer.active = false;
         } else {
-          end(play, "lose", "Hammer!");
+          end(play, "lose", "A hammer dropped from above and caught you.");
           return;
         }
       }
@@ -3230,9 +3479,17 @@
     // Integrate + collide
     const nextX = p.x + p.vx * dtSec;
     const nextY = p.y + p.vy * dtSec;
+    const wasOnGround = p.onGround;
+    const fallSpeedThisFrame = p.vy;
 
     p.x = resolveAxis(state, p, nextX, p.y, "x");
     p.y = resolveAxis(state, p, p.x, nextY, "y");
+
+    // Landing thud: only on the real airborne->grounded transition, and only for an actual
+    // fall (not the sub-pixel resting jitter that re-resolves every frame while standing still).
+    if (!wasOnGround && p.onGround && fallSpeedThisFrame > 260) {
+      AudioSys.sfx.landing();
+    }
 
     // Squash/stretch settle
     p.squash = lerp(p.squash, p.onGround ? 0.25 : 0, 0.08);
@@ -3244,7 +3501,7 @@
     }
 
     // Fell out
-    if (p.y > canvas.height + 140) end(state, "lose", "You fell.");
+    if (p.y > canvas.height + 140) end(state, "lose", explainFallDeath(state));
   }
 
   let stepAccum = 0;
@@ -3336,18 +3593,71 @@
       }
     }
 
+    if (tile.type === Tile.speedBoost) {
+      const wasActive = state.effects.speedBoostUntil > state.now;
+      state.effects.speedBoostUntil = Math.max(state.effects.speedBoostUntil, state.now + 2500);
+      if (!wasActive) showToast("Speed boost!");
+    }
+
+    // Remember the last tile the player actually stood on, and a snapshot of *why* it might
+    // betray them (sab is a stable object reference — reading it later, after the tile itself
+    // has decayed to Tile.empty, still reflects the sabotage that was live at landing time).
+    // This is what lets a later fall-to-death explain itself instead of just saying "You fell."
+    state.lastStand = { gx, gy, type: tile.type, sab: tile.sab, atMs: state.now };
+  }
+
+  /**
+   * Turns a lethal-tile contact into a specific, teachable explanation instead of a bare
+   * tile name — "which sabotage variant actually got you" rather than just "Spikes."
+   * @param {RuntimeTile} tile
+   */
+  function explainHazardDeath(tile) {
+    if (tile.type === Tile.lava) return "Lava — always fatal here, no timing trick to it.";
     if (tile.type === Tile.hex) {
-      const sab = tile.sab.hex;
-      if (sab.type === "invertControls") {
-        state.effects.invertUntil = Math.max(state.effects.invertUntil, state.now + sab.durationMs);
-        AudioSys.sfx.curse();
-        showToast("Cursed: controls inverted!");
+      if (tile.sab.hex.type === "becomeDangerous") return "Cursed tile — it turned dangerous while you were standing near it.";
+      return "Cursed tile.";
+    }
+    if (tile.type === Tile.spikes) {
+      const s = tile.sab.spikes;
+      if (s.type === "delayedOn") return "Delayed spikes — harmless at first, then armed right as you crossed.";
+      if (s.type === "pulse") return "Pulsing spikes — you stepped in during their active phase.";
+      return "Spikes — always active here, straightforward hazard.";
+    }
+    return "Hazard.";
+  }
+
+  /**
+   * Explains a fall-to-death by looking at the last solid tile the player actually stood on
+   * (captured in onLand as state.lastStand) and whether it's the reason they're now falling —
+   * e.g. a platform that broke out from under them, or a jump pad that under-delivered.
+   * Falls back to an honest "that one was on you" message when no sabotage is a good fit,
+   * which is itself useful teaching (don't blame the level for a missed jump).
+   * @param {PlayState} state
+   */
+  function explainFallDeath(state) {
+    const ls = state.lastStand;
+    if (!ls) return "You fell — nothing was under you to begin with.";
+    const elapsed = state.now - ls.atMs;
+
+    if (ls.type === Tile.platform && ls.sab.platform.type !== "none") {
+      const cell = state.tiles[ls.gy] && state.tiles[ls.gy][ls.gx];
+      const brokeAway = !cell || cell.type !== Tile.platform;
+      if (brokeAway && elapsed < 3200) {
+        const pType = ls.sab.platform.type;
+        if (pType === "oneStep") return "One-step platform — it broke the instant you landed on it.";
+        if (pType === "delayed") return "Delayed platform — it held just long enough to be trusted, then gave way.";
+        if (pType === "flickerThenBreak") return "Flickering platform — it warned you with a flicker, then broke anyway.";
       }
     }
-    if (tile.type === Tile.speedBoost) {
-      state.effects.speedBoostUntil = Math.max(state.effects.speedBoostUntil, state.now + 2500);
-      showToast("Speed boost!");
+
+    if (ls.type === Tile.jumppad && ls.sab.pad.type !== "none" && elapsed < 2400) {
+      const padT = ls.sab.pad.type;
+      if (padT === "flaky") return "Flaky jump pad — it fizzled and barely launched you.";
+      if (padT === "reduced") return "Weakened jump pad — the boost was quietly reduced.";
+      if (padT === "delayed") return "Delayed jump pad — the launch fired late, after you'd already left it.";
     }
+
+    return "You fell — that one wasn't sabotage, just a missed landing.";
   }
 
   function checkOutcome(state) {
@@ -3369,14 +3679,23 @@
           addShake(state, 10);
           showToast("Protection absorbed one hit!");
         } else {
-          end(state, "lose", tile.type === Tile.hex ? "Hexed." : tile.type === Tile.lava ? "Lava." : "Spikes.");
+          end(state, "lose", explainHazardDeath(tile));
         }
         return;
       }
       if (tile.type === Tile.food) {
+        const wasActive = state.effects.stabilityUntil > state.now;
         state.effects.stabilityUntil = Math.max(state.effects.stabilityUntil, state.now + 3500);
         state.effects.invertUntil = Math.min(state.effects.invertUntil, state.now);
-        showToast("Food: stability restored!");
+        if (!wasActive) showToast("Food: stability restored!");
+      }
+      if (tile.type === Tile.hex && tile.sab.hex.type === "invertControls") {
+        const wasActive = state.effects.invertUntil > state.now;
+        state.effects.invertUntil = Math.max(state.effects.invertUntil, state.now + tile.sab.hex.durationMs);
+        if (!wasActive) {
+          AudioSys.sfx.curse();
+          showToast("Cursed: controls inverted!");
+        }
       }
     }
   }

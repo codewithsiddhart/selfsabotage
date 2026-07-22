@@ -214,6 +214,7 @@
           </div>
 
           <button id="restartBtn" class="btn warn" type="button" disabled>Restart</button>
+          <button id="openBuiltinLevelsBtn" class="btn" type="button">🎮 Built-in Levels</button>
           <button id="openLevelsBtn" class="btn" type="button">Levels</button>
           <button id="openLeaderboardBtn" class="btn" type="button">Leaderboard</button>
           <button id="openSettingsBtn" class="btn" type="button">Settings</button>
@@ -265,6 +266,7 @@
         </aside>
 
         <section class="stageWrap">
+          <div id="buildTeaser" class="buildTeaser hidden" aria-live="polite"></div>
           <div class="hud">
             <div id="statusPill" class="pill">Loading…</div>
             <div id="timerPill" class="pill timerPill hidden">2:00</div>
@@ -386,18 +388,34 @@
           <div class="smallNote">Use before starting a built-in level. Earned randomly after winning Medium/Hard.</div>
         </div>
         <div class="card">
-          <div class="cardTitle">Level selection</div>
-          <div class="levelTabs">
-            <button type="button" class="levelTab active" data-tier="easy">Easy</button>
-            <button type="button" class="levelTab" data-tier="medium">Medium</button>
-            <button type="button" class="levelTab" data-tier="hard">Hard</button>
-          </div>
-          <div id="levelListByTier" class="levelListByTier"></div>
-          <div class="row" style="margin-top:10px">
-            <button id="quickRandomBtn" class="btn" type="button">Random level</button>
-          </div>
+          <div class="cardTitle">Built-in Levels</div>
+          <p class="helpText">Timed challenges across Easy, Medium, and Hard tiers — now with their own screen.</p>
+          <button id="startModalBrowseLevelsBtn" class="btn primary" type="button">🎮 Browse Built-in Levels</button>
           <div class="smallNote">Built-in levels have a timer. Powerups only work in built-in levels.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Built-in Levels Modal (dedicated, searchable) -->
+    <div id="builtinLevelsModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Built-in levels">
+      <div class="modalHeader">
+        <div class="modalTitle">🎮 Built-in Levels</div>
+        <button id="closeBuiltinLevelsModalBtn" class="iconBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="row">
+          <input id="builtinLevelsSearchInput" class="input" placeholder="Search levels by name…" autocomplete="off" />
+        </div>
+        <div class="levelTabs">
+          <button type="button" class="levelTab active" data-tier="easy">Easy</button>
+          <button type="button" class="levelTab" data-tier="medium">Medium</button>
+          <button type="button" class="levelTab" data-tier="hard">Hard</button>
+        </div>
+        <div id="levelListByTier" class="levelListByTier"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="quickRandomBtn" class="btn" type="button">🎲 Random level</button>
+        </div>
+        <div class="smallNote">Built-in levels have a timer. Powerups only work in built-in levels.</div>
       </div>
     </div>
 
@@ -509,12 +527,15 @@
           <div class="smallNote">1 = gentle betrayals, 10 = chaos (still seeded per run).</div>
         </div>
 
-        <div class="card">
-          <div class="cardTitle">Keybinds</div>
-          <div id="keybindList" class="list" aria-label="Keybind list"></div>
-          <div class="smallNote">
-            Tip: click <b>Change</b>, then press a key. Restart is especially useful mid-run.
+        <div id="keybindsCard" class="card">
+          <div class="cardTitle">Keyboard Shortcuts</div>
+          <div class="smallNote" style="margin-top:0; margin-bottom:10px">
+            Every shortcut in the game, grouped below. Click <b>Change</b>, then press a key — reassigning a key
+            that's already in use moves it here automatically, so nothing ever overlaps. Movement (WASD / Arrows /
+            Space) is fixed and can't be rebound. None of these fire while you're actively playing a run, so they
+            never collide with movement.
           </div>
+          <div id="keybindList" class="list" aria-label="Keybind list"></div>
         </div>
 
         <div class="card">
