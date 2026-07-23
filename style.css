@@ -1381,3 +1381,105 @@ html[data-theme="light"] .mpOverlayX {
   }
 }
 
+/* ---------------------------------------------------------------------
+ * Built-in Levels modal: level cards + tier badges (requirement 3)
+ * --------------------------------------------------------------------- */
+.builtinLevelCard {
+  align-items: center;
+}
+.builtinLevelSub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tierBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 1000;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  line-height: 1.7;
+}
+.tierBadge--easy {
+  color: rgba(45, 212, 191, 0.95);
+  background: rgba(45, 212, 191, 0.14);
+  border-color: rgba(45, 212, 191, 0.35);
+}
+.tierBadge--medium {
+  color: rgba(251, 191, 36, 0.95);
+  background: rgba(251, 191, 36, 0.14);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+.tierBadge--hard {
+  color: rgba(255, 77, 109, 0.95);
+  background: rgba(255, 77, 109, 0.14);
+  border-color: rgba(255, 77, 109, 0.35);
+}
+
+/* ---------------------------------------------------------------------
+ * Keyboard Shortcuts list: category headers + unbound-key pill (requirement 2)
+ * --------------------------------------------------------------------- */
+.kbdGroupTitle {
+  font-size: 11px;
+  font-weight: 1000;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin: 16px 2px 4px;
+}
+.kbdGroupTitle:first-child {
+  margin-top: 2px;
+}
+
+.kbd.unbound {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 800;
+  background: transparent;
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+html[data-theme="light"] .kbd.unbound {
+  border-color: rgba(10, 12, 26, 0.22);
+}
+
+/* ---------------------------------------------------------------------
+ * Build-reward teaser (requirement 4): a one-line, deliberately vague hint
+ * shown above the HUD the first time a freshly built/loaded custom layout is
+ * played. Fades in/out on top of `.hidden`, since display:none can't
+ * transition — script.js toggles `.show` while it's visible, then re-adds
+ * `.hidden` only after the fade-out finishes.
+ * --------------------------------------------------------------------- */
+.buildTeaser {
+  text-align: center;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: 0.2px;
+  color: var(--accent2);
+  padding: 7px 16px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent2);
+  background: rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 420ms ease, transform 420ms ease;
+  pointer-events: none;
+  position: relative;
+  z-index: 3;
+}
+html[data-theme="light"] .buildTeaser {
+  background: rgba(255, 255, 255, 0.55);
+}
+.buildTeaser.show {
+  opacity: 0.92;
+  transform: translateY(0);
+}
+

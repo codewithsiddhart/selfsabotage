@@ -309,6 +309,15 @@
   /** @type {PlayerRecord | null} */
   let activePlayer = null;
 
+  // Moved up from its old spot further down (near `play`/PlayState) — the eager
+  // `renderLevelListByTier()` call during initial setup reads this directly, and having it
+  // declared with `let` further down in the same scope was a genuine bug: any real browser
+  // throws a temporal-dead-zone ReferenceError the instant that earlier code runs, which
+  // aborts this entire script mid-init (window.SSB never gets exposed, mobile.js then fails
+  // too). Caught by this session's smoke test, not by any prior manual click-through.
+  /** @type {Record<string, {attempts:number, bestTimeMs:number}>} */
+  let builtinLevelStats = {};
+
   function loadSave() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
@@ -754,6 +763,31 @@
     { once: true }
   );
 
+  // Delegated (not per-button) UI feedback sounds — one pair of listeners covers every
+  // current and future button/tile/tab, instead of wiring a sfx call onto each one by hand.
+  // A handful of specific controls already play their own bespoke sound on click (e.g. Save
+  // plays AudioSys.sfx.save()); that's an intentional, acceptable layering — distinct click
+  // feedback plus a distinct action sound — not a duplicate/clashing effect.
+  {
+    let lastHoverSfxAt = 0;
+    document.addEventListener("pointerover", (e) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const el = target.closest(".btn, .iconBtn, .tileBtn, .levelTab");
+      if (!el) return;
+      const now = performance.now();
+      if (now - lastHoverSfxAt < 60) return; // throttle rapid mouse-over spam
+      lastHoverSfxAt = now;
+      AudioSys.sfx.uiHover();
+    });
+    document.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const el = target.closest("button, .btn, .iconBtn, .tileBtn, .levelTab");
+      if (el) AudioSys.sfx.uiClick();
+    });
+  }
+
   function isUiTypingTarget(el) {
     if (!el || !(el instanceof Element)) return false;
     const tag = el.tagName;
@@ -1040,6 +1074,42 @@
     }
   }
 
+  // ---------- Build-reward teaser (requirement 4) ----------
+  // Deliberately vague one-liners — never name the sabotage type, just that something's off.
+  const BUILD_TEASER_LINES = [
+    "Something feels different about this run...",
+    "This place doesn't feel entirely trustworthy.",
+    "You get the sense not everything here is as it seems.",
+    "A quiet unease settles in before you've even moved.",
+  ];
+
+  // Its own timer, deliberately separate from the toast system: startPlay() already fires a
+  // toast ("Play mode. Sabotage activated.") the instant a run begins, and reusing showToast()
+  // here would let that call stomp this banner's text (or vice versa) since both would be
+  // fighting over the same element.
+  let buildTeaserHideTimer = 0;
+  function showBuildTeaserBanner() {
+    if (!elBuildTeaser) return;
+    const line = BUILD_TEASER_LINES[Math.floor(Math.random() * BUILD_TEASER_LINES.length)];
+    elBuildTeaser.textContent = line;
+    elBuildTeaser.classList.remove("hidden");
+    // Force a reflow so removing `hidden` and adding `show` don't get coalesced into one
+    // instant, transition-less style recalculation (the fade-in needs an actual "from" state).
+    void elBuildTeaser.offsetWidth;
+    elBuildTeaser.classList.add("show");
+    clearTimeout(buildTeaserHideTimer);
+    buildTeaserHideTimer = setTimeout(() => {
+      elBuildTeaser.classList.remove("show");
+      // Let the CSS fade-out transition (420ms) finish before fully hiding, so it doesn't pop.
+      setTimeout(() => elBuildTeaser.classList.add("hidden"), 450);
+    }, 4200);
+  }
+
+  /** Shows the build teaser banner if this particular run earned one (see createPlayState). */
+  function maybeShowBuildTeaser(state) {
+    if (state && state.showBuildTeaser) showBuildTeaserBanner();
+  }
+
   // ---------- Modal helpers ----------
   function openModal(el) {
     elBackdrop.classList.remove("hidden");
@@ -1047,6 +1117,23 @@
     elBackdrop.setAttribute("aria-hidden", "false");
     if (el === elSettingsModal) buildKeybindUI();
     AudioSys.sfx.menuOpen();
+    focusModalDefault(el);
+  }
+
+  /** Puts the cursor straight into whatever input the person will most likely type into first
+   *  (search, save-name), saving a click. Desktop only — auto-focusing a text input on mobile
+   *  pops the on-screen keyboard immediately and unexpectedly, which is worse than the click
+   *  it would save. */
+  function focusModalDefault(el) {
+    if (deviceMode === "mobile") return;
+    let target = null;
+    if (el === elBuiltinLevelsModal) target = elBuiltinLevelsSearchInput;
+    else if (el === elLevelsModal) target = elSaveLevelNameInput;
+    else if (el === elLeaderboardModal) target = elLeaderboardSearchInput;
+    if (!target) return;
+    // Defer a frame: the modal's `hidden` class was just removed this same tick, and some
+    // browsers won't move focus into an element that was display:none a moment ago.
+    requestAnimationFrame(() => target.focus());
   }
   function closeModal(el) {
     const wasOpen = !el.classList.contains("hidden");
@@ -1065,6 +1152,14 @@
    *  open" instead of always specifically toggling Settings. */
   function anyOpenModal() {
     return ALL_MODALS.find((m) => m && !m.classList.contains("hidden")) || null;
+  }
+
+  /** "View shortcuts" hotkey target: open Settings (if not already the open modal) and
+   *  scroll straight to the Keyboard Shortcuts card, so the full list is reachable in one key. */
+  function openShortcutsView() {
+    if (elSettingsModal.classList.contains("hidden")) openModal(elSettingsModal);
+    const card = document.getElementById("keybindsCard");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function openStartModal() {
@@ -2516,6 +2611,11 @@
     refreshLevelsList();
   });
 
+  // Every other text input in the app (player search, new player, leaderboard search) submits
+  // on Enter — this one was the one gap where you had to reach for the mouse to confirm.
+  elSaveLevelNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") elConfirmSaveLevelBtn.click();
+  });
   elConfirmSaveLevelBtn.addEventListener("click", () => {
     if (!activePlayer) return;
     const name = (elSaveLevelNameInput.value || "").trim().slice(0, 26);
@@ -2585,10 +2685,24 @@
 
       const actions = document.createElement("div");
       actions.className = "actions";
+      const playBtn = document.createElement("button");
+      playBtn.className = "btn success";
+      playBtn.type = "button";
+      playBtn.textContent = "▶ Play";
+      playBtn.title = "Load and start playing immediately";
+      playBtn.addEventListener("click", () => {
+        loadLevel(lvl.id);
+        closeModal(elLevelsModal);
+        // If loadLevel() already restarted an in-progress run on this grid (it does that
+        // itself when mode is "play"), this is a no-op — setMode() bails out early when
+        // already in the target mode. If we were in Build mode, this starts the run.
+        setMode("play");
+      });
       const loadBtn = document.createElement("button");
       loadBtn.className = "btn primary";
       loadBtn.type = "button";
       loadBtn.textContent = "Load";
+      loadBtn.title = "Load into Build mode without starting a run";
       loadBtn.addEventListener("click", () => {
         loadLevel(lvl.id);
         closeModal(elLevelsModal);
@@ -2604,6 +2718,7 @@
         refreshLevelsList();
         refreshLeaderboard();
       });
+      actions.appendChild(playBtn);
       actions.appendChild(loadBtn);
       actions.appendChild(delBtn);
 
@@ -2904,9 +3019,6 @@
   /** @type {PlayState | null} */
   let play = null;
 
-  /** @type {Record<string, {attempts:number, bestTimeMs:number}>} */
-  let builtinLevelStats = {};
-
   /** Powerups selected for next built-in level (consumed when level starts) */
   let pendingPowerupsForRun = { doubleJump: false, speedBoost: false, protection: false };
 
@@ -2998,6 +3110,7 @@
       builtinLevelStats[sourceLevelId] = builtinLevelStats[sourceLevelId] || { attempts: 0, bestTimeMs: Infinity };
     }
     play = createPlayState(sourceLevelId, builtinIndex, 1, usedPowerupsFromPrevRun, mpOpts);
+    maybeShowBuildTeaser(play);
     if (!mpOpts || !mpOpts.skipProfileMutation) {
       if (activePlayer) activePlayer.stats.totalRuns++;
       persist();
@@ -3025,6 +3138,7 @@
     const nextAttempts = resetSource ? 1 : prev ? prev.runAttempts + 1 : 1;
     const used = prev && sourceLevelId ? prev.usedPowerups : { doubleJump: false, speedBoost: false, protection: false };
     play = createPlayState(sourceLevelId, sourceBuiltinIndex, nextAttempts, used, resetSource ? null : prev ? prev.mpOpts : null);
+    maybeShowBuildTeaser(play);
     showToast("Restarted run.");
   }
 
@@ -3128,9 +3242,32 @@
       mpOpts: mpOpts || null,
       lastStand: null,
       showBuildTeaser: false,
+      // Brief grace period after Protection absorbs a hazard hit (see checkOutcome) — without
+      // it, standing in a hazard's collision box for more than one frame (very easy to do:
+      // gravity keeps pulling you through a non-solid spikes/lava tile) would consume
+      // Protection on frame 1 and then still kill you on frame 2, since the hazard itself
+      // never goes away the way the hammer powerup case already deactivates the hammer.
+      invulnerableUntil: 0,
     };
 
     if (usedPowerups.speedBoost) state.effects.speedBoostUntil = t0 + 3500;
+
+    // Build-reward teaser (requirement 4): first-ever play of a freshly built/loaded custom
+    // layout gets a one-line, deliberately vague hint that "something's off" — never which
+    // sabotage type. Fingerprint the grid's actual content (seedFromGrid already hashes tile
+    // types per cell) so re-playing the same layout later doesn't re-trigger it, but editing
+    // even one tile counts as a genuinely new layout. Skipped for built-in levels (their
+    // sabotage is fixed content, not a surprise) and multiplayer (own teaser text would leak
+    // information mid-match / is simply not this feature's concern).
+    if (builtinIndex == null && !mpSession.active) {
+      const fp = seedFromGrid(grid).toString(36);
+      if (!save.settings.seenCustomLevels.includes(fp)) {
+        state.showBuildTeaser = true;
+        save.settings.seenCustomLevels.push(fp);
+        persist();
+      }
+    }
+
     return state;
   }
 
@@ -3186,6 +3323,10 @@
           padCooldownMs: 0,
           cursedActive: false,
           cursedUntil: 0,
+          // One-shot guard for the "sabotageTrigger" arming sfx (hex becomeDangerous, delayedOn
+          // spikes) — without it, `deadly` staying true forever after the edge would otherwise
+          // need re-checking every frame with no way to tell "just armed" from "armed a while ago".
+          sabotageTriggered: false,
         });
         row.push(rt);
       }
@@ -3378,6 +3519,17 @@
     decayShake(play, dt);
   }
 
+  /** Distance-gated so a hazard arming off-screen (far side of a large level) doesn't play
+   *  a sound the player has no reason to associate with anything they can see. */
+  function maybePlaySabotageTrigger(state, gx, gy) {
+    const p = state.player;
+    const tx = gx * TILE + TILE / 2;
+    const ty = gy * TILE + TILE / 2;
+    const dx = p.x - tx;
+    const dy = p.y - ty;
+    if (dx * dx + dy * dy <= 500 * 500) AudioSys.sfx.sabotageTrigger();
+  }
+
   function updateRuntimeTiles(state, dt) {
     const t = state.now - state.t0;
     for (let y = 0; y < ROWS; y++) {
@@ -3388,7 +3540,16 @@
 
         if (tile.type === Tile.spikes) {
           if (tile.sab.spikes.type === "delayedOn") {
+            const wasDeadly = tile.deadly;
             tile.deadly = t >= tile.sab.spikes.delayMs;
+            // Edge-triggered (false->true only), and deliberately NOT applied to the "pulse"
+            // branch below — pulsing spikes flip deadly on/off every cycle, and firing a sound
+            // on every one of those across a level with several pulsing tiles would be a
+            // constant audio-spam mess rather than a useful cue.
+            if (tile.deadly && !wasDeadly && !tile.sabotageTriggered) {
+              tile.sabotageTriggered = true;
+              maybePlaySabotageTrigger(state, x, y);
+            }
           } else if (tile.sab.spikes.type === "pulse") {
             const period = tile.sab.spikes.periodMs;
             const phase = (t % period) / period;
@@ -3399,7 +3560,12 @@
         }
 
         if (tile.type === Tile.hex && tile.sab.hex.type === "becomeDangerous") {
+          const wasDeadly = tile.deadly;
           tile.deadly = t >= tile.sab.hex.activateAtMs;
+          if (tile.deadly && !wasDeadly && !tile.sabotageTriggered) {
+            tile.sabotageTriggered = true;
+            maybePlaySabotageTrigger(state, x, y);
+          }
         }
 
         // Broken platforms become empty.
@@ -3410,6 +3576,10 @@
         if (tile.type === Tile.platform && tile.breakTimer === 0 && tile.stepCount > 0) {
           const platformSabType = tile.sab.platform.type;
           if (tile.solid && (platformSabType === "delayed" || platformSabType === "flickerThenBreak")) {
+            // tile.solid is checked true immediately before this assignment — that's the
+            // guard: this branch (and therefore the sfx) can only run once per tile, since
+            // solid never flips back to true afterward.
+            AudioSys.sfx.platformBreak();
             tile.solid = false;
           }
           if (tile.solid === false) {
@@ -3559,6 +3729,10 @@
     if (tile.type === Tile.platform) {
       tile.stepCount++;
       if (tile.sab.platform.type === "oneStep" && tile.stepCount >= 1) {
+        // tile.solid is guaranteed true here (onLand only fires via a solid-tile collision,
+        // see resolveAxis), and this whole branch only runs once per tile: once solid flips
+        // false, the tile is no longer a collision candidate, so onLand can't reach here again.
+        AudioSys.sfx.platformBreak();
         tile.solid = false;
         tile.breakTimer = 180;
       } else if (tile.sab.platform.type === "delayed" && tile.stepCount >= 1 && tile.breakTimer === 0) {
@@ -3673,8 +3847,14 @@
         return;
       }
       if (tile.deadly) {
+        // Grace period from a Protection absorb still in effect — the hazard tile itself
+        // doesn't go away (unlike the hammer powerup case, which deactivates the hammer),
+        // so without this a player still overlapping it one frame later would die anyway
+        // despite Protection having just been consumed.
+        if (state.now < state.invulnerableUntil) return;
         if (state.usedPowerups.protection) {
           state.usedPowerups.protection = false;
+          state.invulnerableUntil = state.now + 500;
           addParticles(state, p.x, p.y + p.h / 2, 10, true);
           addShake(state, 10);
           showToast("Protection absorbed one hit!");
@@ -4723,28 +4903,83 @@
       syncBuildHUD();
     }
 
-    // Global hotkeys
-    if (input.wasPressed(keyForAction("openSettings"))) {
-      if (!elSettingsModal.classList.contains("hidden")) closeModal(elSettingsModal);
-      else openModal(elSettingsModal);
-    }
-    if (input.wasPressed(keyForAction("openLevels"))) {
-      if (!elLevelsModal.classList.contains("hidden")) closeModal(elLevelsModal);
-      else {
-        if (!activePlayer) openStartModal();
-        openModal(elLevelsModal);
-        refreshLevelsList();
+    // Global hotkeys — entirely disabled while a run is in progress (mode === "play") so a
+    // stray key press never interrupts gameplay. Movement/jump and Restart are exempt by
+    // design: Restart is handled separately inside updatePlay (see its own hotkey check
+    // there), and movement keys are hardcoded, never part of this action-hotkey system.
+    if (mode !== "play") {
+      // Escape (default binding for openSettings) closes whatever modal is actually open,
+      // rather than always specifically toggling Settings — previously Escape while e.g.
+      // the Leaderboard was open would incorrectly open Settings on top of it.
+      if (input.wasPressed(keyForAction("openSettings"))) {
+        const open = anyOpenModal();
+        if (open) closeModal(open);
+        else openModal(elSettingsModal);
       }
-    }
-    if (input.wasPressed(keyForAction("toggleBuild"))) setMode("build");
-    if (input.wasPressed(keyForAction("togglePlay"))) {
-      if (
-        !mpSession.active ||
-        (mpSession.phase !== "mpWaitBuild" &&
-          mpSession.phase !== "mpSpectate" &&
-          mpSession.phase !== "mpMatchEnd")
-      ) {
-        setMode("play");
+      if (input.wasPressed(keyForAction("openLevels"))) {
+        if (!elLevelsModal.classList.contains("hidden")) closeModal(elLevelsModal);
+        else {
+          if (!activePlayer) openStartModal();
+          openModal(elLevelsModal);
+          refreshLevelsList();
+        }
+      }
+      if (input.wasPressed(keyForAction("toggleBuild"))) setMode("build");
+      if (input.wasPressed(keyForAction("togglePlay"))) {
+        if (
+          !mpSession.active ||
+          (mpSession.phase !== "mpWaitBuild" &&
+            mpSession.phase !== "mpSpectate" &&
+            mpSession.phase !== "mpMatchEnd")
+        ) {
+          setMode("play");
+        }
+      }
+      if (input.wasPressed(keyForAction("openBuiltinLevels")) && elOpenBuiltinLevelsBtn) {
+        elOpenBuiltinLevelsBtn.click();
+      }
+      if (input.wasPressed(keyForAction("openLeaderboard"))) {
+        elOpenLeaderboardBtn.click();
+      }
+      if (input.wasPressed(keyForAction("openPlayerMenu"))) {
+        elProfileChip.click();
+      }
+      if (input.wasPressed(keyForAction("findMatch")) && elMultiplayerBtn) {
+        elMultiplayerBtn.click();
+      }
+      if (input.wasPressed(keyForAction("saveLevel"))) {
+        elSaveLevelBtn.click();
+      }
+      if (input.wasPressed(keyForAction("clearGrid"))) {
+        elClearBtn.click();
+      }
+      if (input.wasPressed(keyForAction("undo"))) {
+        undo();
+      }
+      if (input.wasPressed(keyForAction("redo"))) {
+        redo();
+      }
+      if (input.wasPressed(keyForAction("toggleSound"))) {
+        elSoundToggle.click();
+      }
+      if (input.wasPressed(keyForAction("toggleDebugOverlay")) && elDebugOverlayToggle) {
+        elDebugOverlayToggle.click();
+      }
+      if (input.wasPressed(keyForAction("viewShortcuts"))) {
+        openShortcutsView();
+      }
+
+      // Tile hotkeys — build mode only, dispatched generically off TILE_ACTION_MAP so every
+      // palette tile (including the Eraser) gets a key without a hardcoded if/else chain.
+      if (mode === "build") {
+        for (const t of paletteOrder) {
+          const actionId = TILE_ACTION_MAP[t];
+          if (actionId && input.wasPressed(keyForAction(actionId))) {
+            selectedTile = t;
+            syncPaletteSelection();
+            break;
+          }
+        }
       }
     }
 
